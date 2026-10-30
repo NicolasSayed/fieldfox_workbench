@@ -13,6 +13,7 @@ name = "FieldFoxWorkbench" if not onefile else "FieldFoxWorkbench-standalone"
 data = collect_data_files("tzdata")
 data += [(str(root / "README.md"), "."), (str(root / "THIRD_PARTY_NOTICES.md"), ".")]
 data += [(str(root / "docs"), "docs")]
+data += [(str(root / "fieldfox_workbench" / "assets" / "workbench.png"), "fieldfox_workbench/assets")]
 for source in [Path(sys.base_prefix) / "LICENSE.txt",
                Path(sys.base_prefix) / "tcl" / "tcl8.6" / "license.terms",
                Path(sys.base_prefix) / "tcl" / "tk8.6" / "license.terms"]:
@@ -35,9 +36,9 @@ pyz = PYZ(a.pure)
 if onefile:
     exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name=name,
               debug=False, strip=False, upx=False, console=False,
-              version=str(root / "packaging" / "version_info.txt"))
+              version=str(root / "packaging" / "version_info.txt"), icon=str(root / "assets" / "workbench.ico"))
 else:
     exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name=name,
               debug=False, strip=False, upx=False, console=False,
-              version=str(root / "packaging" / "version_info.txt"))
+              version=str(root / "packaging" / "version_info.txt"), icon=str(root / "assets" / "workbench.ico"))
     coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name=name)

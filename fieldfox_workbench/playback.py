@@ -135,6 +135,7 @@ class Playback:
             if self.section is None: raise ValueError("Load a session section first.")
             if self.index.get() == len(self.section.sweep_indices)-1: self.index.set(0)
             self.playing = True; self.play_button.configure(text="Pause")
+            if hasattr(self.app, "_activity"): self.app._activity(self.app.jobs.busy)
             self.app.tabs.select(self.app.trace_tab); self._tick()
         except Exception as error: self.app.error(error)
 
@@ -155,6 +156,7 @@ class Playback:
     def stop(self):
         self.playing = False
         self.play_button.configure(text="Play")
+        if hasattr(self.app, "_activity"): self.app._activity(self.app.jobs.busy)
         if self.timer is not None: self.app.root.after_cancel(self.timer); self.timer = None
 
     def summary(self, kind):

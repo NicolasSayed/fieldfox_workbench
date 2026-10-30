@@ -1,29 +1,29 @@
-## Running max hold and min hold during playback
+## Professional desktop layout and Explorer previews
 
-Enable **Max hold**, **Min hold**, or both on **Traces / CSV**. Both hold curves stay
-visible alongside the current sweep and update as playback advances. They can be
-toggled without pausing. Max hold is red/dashed; min hold is green/dotted.
+The app now has a consistent light theme, clearer spacing, a branded icon and an
+activity indicator. The Help tab is replaced by a **Help · F1** button that opens
+a scrollable guide. Plot controls and CSV column mapping sit in scrollable
+sidebars; session playback, max hold and min hold remain above the trace plot.
 
-- **Reset holds here** starts a new interval at the current sweep without pausing.
-- Forward jumps include intervening selected rows. Backward seeks recalculate to
-  the cursor so later peaks/troughs do not leak into earlier views.
-- Moving before a reset reanchors there; loading a section or restarting playback
-  from the end starts over.
-- Holds cover the loaded selection only. Rows omitted by step/thinning do not count.
-- Compatible CSV overlays and the fixed section mean remain visible during playback.
-- CSV/MAT exports and reports include the displayed holds; MAT metadata includes
-  the hold interval. Exported snapshots are independent of later playback updates.
+The **Explorer** has a resizable, read-only file preview beside the folder list.
+Select a remote file or open a local file to view text, with encoding and byte
+counts, Find next and Wrap. Binary files show hex. Reads are capped at 256 KiB,
+hex output at 4 KiB, and larger files are marked prefix only. Remote preview uses
+a dedicated read connection and closes it after the prefix; it makes no remote
+changes. Stale selection results are discarded.
 
-Holds reuse the selected section and keep two point-sized extrema buffers. The
-recording is not reread per frame. The Section mean button is a separate fixed
-summary in linear power over the whole selected section.
+Download **FieldFoxWorkbench-standalone.exe** and run it: a single Windows x64
+EXE, approximately 70 MiB, including Python 3.11 and runtime DLLs. No Python
+installation or adjacent `_internal` folder is needed. Python CLI/API entry
+points, UTC/EST MAT export and running playback holds remain available.
 
-Download **FieldFoxWorkbench-standalone.exe** and run it: a single Windows x64 EXE,
-approximately 70 MiB, including Python 3.11 and runtime DLLs. No Python install or
-adjacent `_internal` folder is needed. The 300 MiB cap and runtime audit remain.
+**225 tests passed; one skipped** because no real recording was supplied. The
+offline frozen-app test covers all five tabs, the preview and Help window, both
+running holds, rendering, decoding, UTC/EST MAT export, images and PDF reports.
+The desktop layout was also inspected with synthetic data and a loopback server.
+Exact size, SHA-256 and runtime checks are in `build-report.json` and
+`SHA256SUMS.txt`. The enforced EXE size cap remains 300 MiB.
 
-213 tests passed; one test skipped because no real recording was supplied. The
-frozen self-test also checks both running holds, updates and reset alongside
-rendering, decoding, UTC/EST MAT export, image preview and PDF reports. Exact sizes,
-SHA-256 and runtime checks are in `build-report.json` and `SHA256SUMS.txt`.
-Live N9917B functionality still needs hardware validation; network tests use a simulator.
+Live N9917B functionality still needs hardware validation, including early closure
+of large preview transfers. Network tests use a simulator; no vendor programs,
+real recordings or decoded user data are included.

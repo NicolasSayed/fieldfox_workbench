@@ -14,9 +14,9 @@ class ScreenPanel:
         actions = ttk.Frame(outer); actions.pack(fill="x")
         ttk.Label(actions, text="Capture storage").pack(side="left")
         ttk.Combobox(actions, textvariable=self.drive, values=["INTERNAL", "SDCARD", "USBDISK", "USBDISK1", "USBDISK2"], state="readonly", width=13).pack(side="left", padx=8)
-        for text, command in [("Capture screen → PNG…", lambda: self.capture("png")),
-                              ("Capture displayed data → CSV…", lambda: self.capture("csv")),
-                              ("Open local image…", self.open_image), ("Save image copy…", self.save_copy)]:
+        for text, command in [("Capture PNG…", lambda: self.capture("png")),
+                              ("Capture CSV…", lambda: self.capture("csv")),
+                              ("Open image…", self.open_image), ("Save copy…", self.save_copy)]:
             ttk.Button(actions, text=text, command=command).pack(side="left", padx=5)
         ttk.Label(outer, textvariable=self.status, wraplength=1100).pack(fill="x", pady=12)
         self.preview = ttk.Label(outer, text="Screenshots appear here.", anchor="center")

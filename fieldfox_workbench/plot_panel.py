@@ -33,18 +33,18 @@ class PlotPanel:
         for label, var, width in [("Decoder sweep (blank=first)", self.sweep, 8), ("Slot", self.slot, 4)]:
             ttk.Label(top, text=label).pack(side="left", padx=(12, 3))
             ttk.Entry(top, textvariable=var, width=width).pack(side="left")
-        mapping = ttk.Frame(outer); mapping.pack(fill="x", pady=6)
-        self.xbox = ttk.Combobox(mapping, textvariable=self.xcol, state="readonly", width=25)
-        self.ybox = ttk.Combobox(mapping, textvariable=self.ycol, state="readonly", width=25)
-        for label, box in [("X", self.xbox), ("Y", self.ybox)]:
-            ttk.Label(mapping, text=label).pack(side="left", padx=(0, 4)); box.pack(side="left", padx=(0, 10))
-        ttk.Label(mapping, text="X multiplier").pack(side="left")
-        ttk.Entry(mapping, textvariable=self.scale, width=9).pack(side="left", padx=5)
-        ttk.Button(mapping, text="Add CSV overlay", command=self.add_csv).pack(side="left")
-        ttk.Button(mapping, text="Clear traces", command=self.clear).pack(side="right")
-        body = ttk.Frame(outer); body.pack(fill="both", expand=True)
+        ttk.Button(top, text="Clear traces", command=self.clear).pack(side="right")
+        body = ttk.Frame(outer); body.pack(fill="both", expand=True, pady=(8, 0))
         from fieldfox_recording.gui import scroll_controls
-        side = scroll_controls(body, width=245)
+        side = scroll_controls(body, width=265)
+        mapping = ttk.LabelFrame(side, text="CSV columns", padding=8); mapping.pack(fill="x", pady=(0, 12))
+        self.xbox = ttk.Combobox(mapping, textvariable=self.xcol, state="readonly", width=19)
+        self.ybox = ttk.Combobox(mapping, textvariable=self.ycol, state="readonly", width=19)
+        for label, box in [("X column", self.xbox), ("Y column", self.ybox)]:
+            ttk.Label(mapping, text=label).pack(anchor="w"); box.pack(fill="x", pady=(2, 6))
+        ttk.Label(mapping, text="X multiplier").pack(anchor="w")
+        ttk.Entry(mapping, textvariable=self.scale, width=9).pack(fill="x", pady=(2, 6))
+        ttk.Button(mapping, text="Add CSV overlay", command=self.add_csv).pack(fill="x")
         fields = [("Plot title", self.title), ("X axis label", self.xlabel), ("Y axis label", self.ylabel),
                   ("X minimum", self.xmin), ("X maximum", self.xmax), ("Y minimum", self.ymin),
                   ("Y maximum", self.ymax), ("Lower limit (Y units)", self.lower), ("Upper limit (Y units)", self.upper)]
@@ -68,8 +68,8 @@ class PlotPanel:
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.canvas.mpl_connect("button_press_event", self._click)
         actions = ttk.Frame(outer); actions.pack(fill="x", pady=8)
-        for label, command in [("Export overlays CSV / MAT…", self.export), ("Save image…", self.save_image),
-                               ("PDF report…", self.report), ("Save plot preset…", self.save_preset),
+        for label, command in [("Export data…", self.export), ("Save image…", self.save_image),
+                               ("PDF report…", self.report), ("Save preset…", self.save_preset),
                                ("Load preset…", self.load_preset)]:
             ttk.Button(actions, text=label, command=command).pack(side="left", padx=(0, 6))
         ttk.Label(outer, textvariable=self.summary, wraplength=1130).pack(fill="x")
@@ -141,6 +141,12 @@ class PlotPanel:
         if self.logx.get() and (any(np.any(t.x <= 0) for t in self.traces) or xmin is not None and xmin <= 0 or xmax is not None and xmax <= 0):
             raise ValueError("Logarithmic X needs positive X values and limits.")
         ax = self.axes; ax.clear(); summaries = []
+        if not self.traces:
+            ax.set_axis_off()
+            ax.text(.5, .55, "Your traces appear here", ha="center", va="center", fontsize=16, color="#18283E", transform=ax.transAxes)
+            ax.text(.5, .45, "Open a CSV, load a session, or capture an SA trace.", ha="center", va="center", fontsize=10, color="#5F7086", transform=ax.transAxes)
+            self.summary.set("Ready for a recording, CSV or instrument trace."); self.canvas.draw_idle(); return
+        ax.set_axis_on()
         for trace in self.traces:
             styles = {"playback_current": {"color": "tab:blue"},
                       "playback_max_hold": {"color": "tab:red", "linestyle": "--"},
@@ -158,7 +164,7 @@ class PlotPanel:
         if xmin is not None or xmax is not None: ax.set_xlim(left=xmin, right=xmax)
         if ymin is not None or ymax is not None: ax.set_ylim(bottom=ymin, top=ymax)
         if self.traces: ax.legend(fontsize=8)
-        self.summary.set(" | ".join(summaries) or "Open a CSV, load session playback, or capture an SA trace.")
+        self.summary.set(" | ".join(summaries[:3]) + (f" | +{len(summaries)-3} more; see report for all statistics." if len(summaries) > 3 else ""))
         self.canvas.draw_idle()
 
     def _click(self, event):

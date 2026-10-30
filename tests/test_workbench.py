@@ -207,7 +207,7 @@ def test_source_frozen_diagnostics_entrypoint(tmp_path):
     result = subprocess.run([sys.executable, "-m", "fieldfox_workbench", "--self-test", str(output)], capture_output=True, text=True, timeout=35)
     if "no display name" in result.stderr: pytest.skip("No Tk display")
     assert result.returncode == 0, result.stderr + (output.read_text() if output.exists() else "")
-    data = json.loads(output.read_text()); assert data["ok"] and data["tabs"] == 6
+    data = json.loads(output.read_text()); assert data["ok"] and data["tabs"] == 5
 
 
 def test_playback_bar_on_trace_page_updates_plot_and_keeps_cursor_in_sync(desktop, tmp_path):

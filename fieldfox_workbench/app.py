@@ -33,41 +33,88 @@ class Workbench:
         self.root = root; self.persist = persist; self.settings_file = Path(settings_file) if settings_file else settings_path()
         self.recent = []; self.closing = False
         root.title(f"FieldFox Workbench {__version__}")
-        width, height = min(1280, root.winfo_screenwidth()-60), min(940, root.winfo_screenheight()-100)
-        root.geometry(f"{max(950, width)}x{max(650, height)}"); root.minsize(950, 650)
-        style = ttk.Style(root)
-        if "vista" in style.theme_names(): style.theme_use("vista")
-        self.status = tk.StringVar(value="Open a local session / CSV, or enter your FieldFox address on Instrument files.")
+        from .ui import apply_theme, fit_window
+        fit_window(root)
+        self.style = apply_theme(root)
+        self.help_window = None
+        self.status = tk.StringVar(value="Open a local session / CSV, or enter your FieldFox address on Explorer.")
         self.jobs = Jobs(root, self.status, self.error)
-        bar = ttk.Frame(root, padding=(10, 7)); bar.pack(fill="x")
-        ttk.Label(bar, text="FieldFox Workbench", font=("Segoe UI", 15, "bold")).pack(side="left", padx=(0, 20))
-        ttk.Button(bar, text="Open session…", command=self.choose_session).pack(side="left", padx=4)
-        ttk.Button(bar, text="Open CSV / image…", command=self.choose_file).pack(side="left", padx=4)
+        header = ttk.Frame(root, padding=(20, 13), style="Header.TFrame"); header.pack(fill="x")
+        brand = ttk.Frame(header, style="Header.TFrame"); brand.pack(side="left")
+        ttk.Label(brand, text="FieldFox Workbench", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(brand, text="RECORDINGS  /  TRACES  /  INSTRUMENTS", style="HeaderMuted.TLabel").pack(anchor="w", pady=(3, 0))
+        self.help_button = ttk.Button(header, text="Help  ·  F1", command=self.show_help)
+        self.help_button.pack(side="right")
+        ttk.Label(header, text=f"v{__version__}", style="HeaderMuted.TLabel").pack(side="right", padx=18)
+        bar = ttk.Frame(root, padding=(16, 12)); bar.pack(fill="x")
+        ttk.Button(bar, text="Open session…", command=self.choose_session, style="Accent.TButton").pack(side="left", padx=(0, 8))
+        ttk.Button(bar, text="Open CSV / image…", command=self.choose_file).pack(side="left", padx=(0, 16))
         self.recent_choice = tk.StringVar()
-        self.recent_box = ttk.Combobox(bar, textvariable=self.recent_choice, state="readonly", width=36)
-        self.recent_box.pack(side="left", padx=10); self.recent_box.bind("<<ComboboxSelected>>", lambda _: self.open_path(self.recent_choice.get()))
-        ttk.Button(bar, text="Cancel operation", command=self.cancel).pack(side="right")
-        ttk.Label(root, textvariable=self.status, padding=(10, 6), wraplength=1200).pack(side="bottom", fill="x")
-        self.tabs = ttk.Notebook(root); self.tabs.pack(fill="both", expand=True, padx=7, pady=(0, 7))
-        self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab = [ttk.Frame(self.tabs) for _ in range(6)]
-        for frame, title in zip((self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab),
-                                ("Instrument files", "Session spectrogram", "Traces / CSV", "Screenshots / capture", "SA control / live", "Help")):
+        ttk.Label(bar, text="Recent", style="Muted.TLabel").pack(side="left", padx=(0, 6))
+        self.recent_box = ttk.Combobox(bar, textvariable=self.recent_choice, state="readonly", width=28)
+        self.recent_box.pack(side="left", fill="x", expand=True, padx=(0, 16)); self.recent_box.bind("<<ComboboxSelected>>", lambda _: self.open_path(self.recent_choice.get()))
+        self.cancel_button = ttk.Button(bar, text="Cancel operation", command=self.cancel, state="disabled")
+        self.cancel_button.pack(side="right")
+        footer = ttk.Frame(root, padding=(18, 7)); footer.pack(side="bottom", fill="x")
+        self.activity = tk.StringVar(value="Ready")
+        ttk.Label(footer, textvariable=self.activity, style="Section.TLabel", width=10).pack(side="left")
+        ttk.Label(footer, textvariable=self.status, style="Muted.TLabel", wraplength=1040).pack(side="left", fill="x", expand=True)
+        self.progress = ttk.Progressbar(root, mode="indeterminate"); self.progress.pack(side="bottom", fill="x")
+        self.jobs.on_busy = self._activity
+        self.tabs = ttk.Notebook(root); self.tabs.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab = [ttk.Frame(self.tabs) for _ in range(5)]
+        for frame, title in zip((self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab),
+                                ("Explorer", "Session spectrogram", "Traces / CSV", "Screenshots / capture", "SA control / live")):
             self.tabs.add(frame, text=title)
         self.browser = BrowserApp(root, parent=self.browser_tab, embedded=True, on_download=self.open_path)
         self.viewer = FieldFoxApp(root, parent=self.session_tab, embedded=True, on_loaded=self.session_loaded)
         self.browser.cancel = self.jobs.cancel; self.browser._report = self.jobs.report; self.viewer.cancel_event = self.jobs.cancel
+        self.browser.external_busy = lambda: self.jobs.busy
         self.browser._job = lambda work, done, message: self.panel_job(self.browser, work, done, message)
         self.viewer._job = lambda work, done, message: self.panel_job(self.viewer, work, done, message)
         self.browser._error = self.viewer._error = self.error
         self.plots = PlotPanel(self, self.trace_tab); self.screen = ScreenPanel(self, self.screen_tab)
         self.playback = Playback(self, self.plots.playback_frame); self.live = LivePanel(self, self.live_tab)
-        help_text = tk.Text(help_tab, wrap="word", font=("Segoe UI", 11), padx=22, pady=16)
-        help_text.pack(fill="both", expand=True)
-        help_text.insert("1.0", HELP); help_text.configure(state="disabled")
+        root.bind("<F1>", lambda _: self.show_help())
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.report_callback_exception = lambda kind, value, trace: self.error(value)
         self.load_settings()
         self.tabs.select(self.session_tab)
+
+    def _activity(self, busy):
+        playing = bool(getattr(getattr(self, "playback", None), "playing", False))
+        live = bool(getattr(getattr(self, "live", None), "monitoring", False))
+        self.activity.set("Working" if busy else "Playback" if playing else "Live view" if live else "Ready")
+        self.cancel_button.configure(state="normal" if busy or playing or live else "disabled")
+        if busy:
+            self.progress.configure(mode="indeterminate"); self.progress.start(15)
+        else:
+            self.progress.stop(); self.progress.configure(mode="determinate", value=0)
+
+    def show_help(self):
+        import tkinter as tk
+        from tkinter import ttk
+        if self.help_window is not None and self.help_window.winfo_exists():
+            self.help_window.deiconify(); self.help_window.lift(); return
+        window = tk.Toplevel(self.root); self.help_window = window
+        from .ui import work_area
+        left, top, width, height = work_area(self.root)
+        w, h = min(850, width-80), min(700, height-100)
+        x = max(left, min(self.root.winfo_rootx()+(self.root.winfo_width()-w)//2, left+width-w))
+        y = max(top, min(self.root.winfo_rooty()+50, top+height-h-40))
+        window.title("FieldFox Workbench · Help"); window.geometry(f"{w}x{h}+{x}+{y}"); window.minsize(min(580,w), min(420,h))
+        window.transient(self.root)
+        outer = ttk.Frame(window, padding=20); outer.pack(fill="both", expand=True)
+        ttk.Label(outer, text="Workbench guide", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(outer, text="Workflow, playback, exports and compatibility", style="Muted.TLabel").pack(anchor="w", pady=(5, 14))
+        body = ttk.Frame(outer); body.pack(fill="both", expand=True)
+        text = tk.Text(body, wrap="word", padx=16, pady=14, borderwidth=0, font="TkDefaultFont", spacing3=5, height=1)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scroll.set); scroll.pack(side="right", fill="y"); text.pack(fill="both", expand=True)
+        text.insert("1.0", HELP); text.configure(state="disabled")
+        self.help_text = text
+        ttk.Button(outer, text="Close", command=window.destroy).pack(anchor="e", pady=(12, 0))
+        window.bind("<Escape>", lambda _: window.destroy())
 
     def error(self, error):
         from tkinter import messagebox
@@ -175,7 +222,7 @@ class Workbench:
 
 HELP = """FieldFox Workbench
 
-1. Instrument files: enter your N9917B IP address, port 5025 and a timeout. Connect / browse lists internal / SD / USB folders. Double-click folders to navigate; download a completed session or individual file to a NEW local destination. Completed downloads open in the appropriate tab.
+1. Explorer: enter your N9917B IP address, port 5025 and a timeout. Connect / browse lists internal / SD / USB folders. Double-click folders to navigate. Selecting a file shows a read-only text preview on the right; binary files get a short hex view. Previews read at most 256 KiB (hex displays at most 4 KiB); larger files show a prefix-only label. Open local text previews from the same panel, use Find to search the preview and Wrap to change line wrapping. Download a completed session or individual file to a NEW local destination. Completed downloads open in the appropriate tab.
 
 2. Session spectrogram: select an RTAUTOsession folder containing dSTA00000 and dTRC00000 (or supported flat stores). Choose the sweep interval and frequency range, then Load / update plot. Large selections are thinned to the maximum displayed sweeps, not averaged. Export section MAT preserves the displayed data plus instrument, UTC and EST timestamps. Existing files and original session folders are protected.
 

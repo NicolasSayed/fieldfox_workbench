@@ -1,4 +1,4 @@
-# Release 0.1.2 validation
+# Release 0.1.3 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -6,9 +6,28 @@ tzdata 2026.6 and PyInstaller 6.22.3.
 
 ## Executed checks
 
-`python -m pytest -q -rs`: **213 passed, 1 skipped**. The skipped integration test
+`python -m pytest -q -rs`: **225 passed, 1 skipped**. The skipped integration test
 requires `FIELDFOX_TEST_SESSION`; no real session was available. Playback slider/plot synchronization and rejection of mismatched, missing or mixed
 Python/VC runtimes are included in the suite.
+
+File-preview checks cover UTF-8, UTF-16/32 BOMs, Windows-1252, incomplete UTF-8 at
+the prefix boundary, empty files, binary hex output, bounded local reads,
+fragmented remote blocks, size mismatches, line endings, cancellation, dedicated
+connection closure and changing selections during a read. GUI tests verify
+read-only local/remote previews, Find and a single-instance Help dialog.
+
+The native Windows layout was inspected with independently generated synthetic
+session data and a loopback file server: Explorer split/text preview, loaded
+spectrogram, trace playback with both holds and the Help window. Window sizing
+respects the Windows work area; plot controls scroll and the load action remains
+visible. The application icon is independently authored; no vendor artwork is used.
+
+Repeat source tests encountered intermittent Tcl/Tk script-read errors in this
+PC's Microsoft Store Python installation. A separate 15-root Tk startup check
+and the final complete suite passed; no runtime repair or specific cause is
+claimed. The frozen application uses its bundled Tcl/Tk scripts and passed the
+isolated startup/export check. Source-runtime errors remain a local environment
+limitation to investigate if they recur.
 
 Running-hold tests use nonmonotonic synthetic rows to check both extrema during
 actual timed playback, forward jumps including intermediate peaks, backward seeks
@@ -25,7 +44,8 @@ download → recording load → playback, screenshot/CSV capture → viewer, pow
 markers/limits, overlay MAT round-trip, report output and a single-worker guard.
 
 The release is a single EXE. Its frozen `--self-test RESULT_JSON` checks creation
-of all six tabs, synthetic session decode and TkAgg rendering, CSV columns,
+of all five tabs, the read-only file preview and Help dialog, synthetic session
+decode and TkAgg rendering, CSV columns,
 markers/limits, section MAT round-trip with UTC/EST fields, overlay MAT, Pillow
 image preview, PDF report, both running holds and reset. It verifies that playback
 controls are embedded in the trace page and that changing the row updates the plot.
@@ -65,7 +85,8 @@ frequency/power comparison is claimed.
 
 SCPI operations were exercised with a loopback simulator using documented Keysight
 commands. Real N9917B catalogue layouts, firmware-specific behavior, screenshot
-creation/cleanup, data capture, format restoration and SA controls still need a live
+creation/cleanup, data capture, format restoration, SA controls and early closure
+of large file-preview transfers still need a live
 instrument check. Connecting does not run these controls automatically. Start with
 identity/catalogue and a completed session download, then test screenshot capture
 and a held SA trace before applying settings. Keep captures and instrument inputs

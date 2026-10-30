@@ -17,7 +17,8 @@ to copy beside it. Unsigned builds may trigger Windows reputation prompts.
 
 | Area | Available |
 |---|---|
-| Ethernet browser | Internal / SD / USB listings, filtering, recursive session downloads, progress, cancel, file SHA-256, JSON listings |
+| Explorer | Internal / SD / USB listings, filtering, read-only text/hex preview, recursive session downloads, progress, cancel, file SHA-256, JSON listings |
+| Desktop UI | Consistent light theme, resizable explorer split, scrollable plot controls, activity indicator and Help button / F1 |
 | Integrated loading | Downloaded sessions, CSV files and images open in the matching tab; local open and recent files |
 | Recordings | GPSA / supported RTSA state and trace decoding, selected-section spectrogram, frequency/sweep selection, color limits/maps, zoom and pan |
 | Playback | Slider, previous/play/pause/next, speed, UTC/EST, running max/min hold curves with reset, and a section mean on the trace tab |
@@ -37,8 +38,10 @@ features are tested against a loopback simulator, not claimed hardware-validated
 
 ## Typical workflow
 
-1. On **Instrument files**, enter the FieldFox IP address, port `5025` and a timeout.
-   Connect / browse, then navigate internal/SD/USB storage. Download a **completed**
+1. On **Explorer**, enter the FieldFox IP address, port `5025` and a timeout.
+   Connect / browse, then navigate internal/SD/USB storage. Select a file to preview
+   its text on the right; use **Find next**, **Wrap** or **Open local...** as needed.
+   Download a **completed**
    `RTAUTOsessionXX` folder to a new local folder. Avoid recordings still being written.
 2. The session opens on **Session spectrogram**. Set an inclusive first sweep,
    exclusive stop sweep, trace slot, frequency range and maximum displayed rows.
@@ -58,6 +61,25 @@ features are tested against a loopback simulator, not claimed hardware-validated
 6. Place markers, apply limits and export a PDF report on **Traces / CSV**. Limits
    test all imported points, including points outside the zoom. Reports include
    loaded trace plots, the session spectrogram and screenshot when present.
+
+Use **Help · F1** in the header (or press F1) to open the scrollable guide in a
+separate window. Plot settings and CSV column mapping use scrollable sidebars so
+the plots and playback controls remain accessible.
+
+### File previews
+
+The Explorer previews remote files when selected, or local files with **Open
+local...**. Text is displayed read-only with its encoding and byte count; nothing
+is executed. UTF-8, BOM-marked UTF-16/32 and Windows-1252 text are supported.
+Binary files show a short hex view instead of being interpreted as text.
+
+Reads stop at **256 KiB** per preview; hex output displays at most **4 KiB**.
+Larger files are marked **prefix only**. The remote command has no byte-range
+argument: preview reads a prefix from a dedicated connection and closes that
+connection early when necessary. It does not save a local copy, upload anything,
+or change the remote file. A new selection discards stale preview results. The
+instrument's handling of an interrupted large transfer still needs hardware
+validation. Use Download for the complete file.
 
 The source clock defaults to **EST, fixed UTC−05:00 all year**. Recording ticks have
 no embedded time zone. MAT section exports include `timestamp_instrument`,
@@ -178,7 +200,8 @@ python -m fieldfox_workbench --self-test build/source-selftest.json
 Tests construct synthetic binary sessions and a loopback SCPI instrument. They cover
 versions, truncation, direct launches, MAT clock conversions, TCP fragmentation,
 transfer cleanup, capture lifecycle, trace format restoration, GUI handoffs,
-playback, limits and reports. Self-test renders TkAgg figures and round-trips SciPy
+bounded text/hex previews, selection races, playback, limits and reports.
+Self-test renders TkAgg figures and round-trips SciPy
 MAT exports in the actual frozen app. It does not contact an instrument. See
 [validation](docs/validation.md) for measured results and hardware limitations.
 
@@ -186,7 +209,8 @@ One worker runs at a time. Transfers stream in 64 KiB chunks; session plotting i
 capped at 20 million cells and defaults to 2000 sweeps. CSV imports are capped at
 128 MiB, one million rows, 128 columns and four million numeric cells. Overlays are
 capped at 16 traces / two million points. Image preview is capped at 32 MiB / 16
-million pixels. Full CSV exports stream; NPZ uses disk-backed power arrays but
+million pixels; file text previews read at most 256 KiB. Full CSV exports stream;
+NPZ uses disk-backed power arrays but
 retains per-sweep metadata in RAM. Cancellation is checked between records/socket
 reads; final compression, rendering and cleanup finish before shutdown. No jobs
 remain when the app exits. Preferences/recent paths are saved only in

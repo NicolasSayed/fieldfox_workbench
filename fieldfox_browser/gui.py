@@ -14,6 +14,7 @@ if not __package__:
     __package__ = "fieldfox_browser"
 
 from .client import BrowserError, Cancelled, DRIVES, FieldFoxClient, RemotePath, component
+from .preview import make_preview, preview_local
 
 
 class BrowserApp:
@@ -22,6 +23,8 @@ class BrowserApp:
         from tkinter import ttk
         self.root = root; self.busy = False; self.closing = False
         self.on_download = on_download
+        self.external_busy = lambda: False
+        self.preview_epoch = 0; self.preview_after = None; self.preview_result = None
         self.results = queue.Queue(); self.cancel = threading.Event(); self.last_report = 0
         self.entries = {}; self.catalog = None; self.loaded = None
         self.host = tk.StringVar(); self.port = tk.StringVar(value="5025")
@@ -32,13 +35,13 @@ class BrowserApp:
         if not embedded:
             root.title("FieldFox Ethernet file browser"); root.geometry("1040x650"); root.minsize(820, 500)
         frame = ttk.Frame(parent if parent is not None else root, padding=10); frame.pack(fill="both", expand=True)
-        connection = ttk.Frame(frame); connection.pack(fill="x")
+        connection = ttk.LabelFrame(frame, text="Instrument connection", padding=(10, 8)); connection.pack(fill="x")
         self.inputs = []; self.buttons = []
         for text, variable, width in [("Instrument IP / hostname", self.host, 28), ("Port", self.port, 7), ("Timeout (s)", self.timeout, 6)]:
             ttk.Label(connection, text=text).pack(side="left", padx=(0, 5))
             widget = ttk.Entry(connection, textvariable=variable, width=width); widget.pack(side="left", padx=(0, 10)); self.inputs.append(widget)
-        self._button(connection, "Connect / browse", self.browse).pack(side="left")
-        ttk.Label(frame, textvariable=self.identity).pack(fill="x", pady=(8, 6))
+        self._button(connection, "Connect / browse", self.browse, style="Accent.TButton").pack(side="left")
+        ttk.Label(frame, textvariable=self.identity, style="Muted.TLabel").pack(fill="x", pady=(10, 8))
         navigation = ttk.Frame(frame); navigation.pack(fill="x")
         storage = ttk.Combobox(navigation, textvariable=self.drive, values=DRIVES, state="readonly", width=12)
         storage.pack(side="left", padx=(0, 7)); self.inputs.append(storage); self.storage = storage
@@ -51,13 +54,51 @@ class BrowserApp:
         ttk.Label(filtering, text="Filter names").pack(side="left")
         ttk.Entry(filtering, textvariable=self.filter).pack(side="left", fill="x", expand=True, padx=8)
         self.filter.trace_add("write", lambda *_: self._render())
-        table = ttk.Frame(frame); table.pack(fill="both", expand=True)
+        self.panes = ttk.Panedwindow(frame, orient="horizontal"); self.panes.pack(fill="both", expand=True)
+        table = ttk.Frame(self.panes); self.panes.add(table, weight=3)
         self.tree = ttk.Treeview(table, columns=("kind", "bytes", "type"), selectmode="browse")
-        for name, title, width in [("#0", "Name", 520), ("kind", "Kind", 80), ("bytes", "Bytes", 130), ("type", "Type", 90)]:
-            self.tree.heading(name, text=title); self.tree.column(name, width=width, anchor="e" if name == "bytes" else "w")
+        for name, title, width in [("#0", "Name", 290), ("kind", "Kind", 75), ("bytes", "Bytes", 105), ("type", "Type", 65)]:
+            self.tree.heading(name, text=title); self.tree.column(name, width=width, minwidth=55 if name != "#0" else 150, anchor="e" if name == "bytes" else "w")
         scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set); self.tree.pack(side="left", fill="both", expand=True); scroll.pack(side="right", fill="y")
+        horizontal = ttk.Scrollbar(table, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=scroll.set, xscrollcommand=horizontal.set)
+        table.rowconfigure(0, weight=1); table.columnconfigure(0, weight=1)
+        self.tree.grid(row=0, column=0, sticky="nsew"); scroll.grid(row=0, column=1, sticky="ns"); horizontal.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", self.open_selected)
+        self.tree.bind("<<TreeviewSelect>>", self._preview_selection)
+        preview = ttk.LabelFrame(self.panes, text="File preview", padding=10); self.panes.add(preview, weight=2)
+        self.preview_name = tk.StringVar(value="Select a file")
+        self.preview_info = tk.StringVar(value="Text preview · read-only · up to 256 KiB")
+        ttk.Label(preview, textvariable=self.preview_name, style="Section.TLabel", wraplength=450).pack(fill="x")
+        ttk.Label(preview, textvariable=self.preview_info, style="Muted.TLabel", wraplength=450).pack(fill="x", pady=(4, 8))
+        preview_actions = ttk.Frame(preview); preview_actions.pack(fill="x", pady=(0, 7))
+        ttk.Button(preview_actions, text="Preview selected", command=self.preview_selected).pack(side="left", padx=(0, 6))
+        ttk.Button(preview_actions, text="Open local…", command=self.open_local_preview).pack(side="left")
+        self.preview_wrap = tk.BooleanVar()
+        ttk.Checkbutton(preview_actions, text="Wrap", variable=self.preview_wrap,
+                        command=lambda: self.preview_text.configure(wrap="word" if self.preview_wrap.get() else "none")).pack(side="right")
+        find = ttk.Frame(preview); find.pack(fill="x", pady=(0, 7))
+        self.preview_query = tk.StringVar()
+        query_entry = ttk.Entry(find, textvariable=self.preview_query)
+        query_entry.pack(side="left", fill="x", expand=True, padx=(0, 6)); query_entry.bind("<Return>", lambda _: self.find_preview())
+        ttk.Button(find, text="Find next", command=self.find_preview).pack(side="right")
+        area = ttk.Frame(preview); area.pack(fill="both", expand=True)
+        area.rowconfigure(0, weight=1); area.columnconfigure(0, weight=1)
+        self.preview_text = tk.Text(area, wrap="none", state="disabled", font="TkFixedFont", width=34, height=8,
+                                    borderwidth=0, padx=10, pady=8, highlightthickness=1, highlightbackground="#D7DFEB")
+        vs = ttk.Scrollbar(area, orient="vertical", command=self.preview_text.yview)
+        hs = ttk.Scrollbar(area, orient="horizontal", command=self.preview_text.xview)
+        self.preview_text.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        self.preview_text.grid(row=0, column=0, sticky="nsew"); vs.grid(row=0, column=1, sticky="ns"); hs.grid(row=1, column=0, sticky="ew")
+        self.preview_text.tag_configure("match", background="#FFE8A3", foreground="#18283E")
+        self.preview_text.bind("<Control-a>", self._select_all_preview)
+        self._set_preview_text("Select an instrument file to inspect its contents.\n\nText stays read-only. Binary files show hexadecimal bytes. Large files show a bounded prefix.")
+        self._sash_ready = False
+        preview.bind("<Configure>", lambda event: [label.configure(wraplength=max(180, event.width-26)) for label in preview.winfo_children() if isinstance(label, ttk.Label)])
+        def position_sash(event):
+            if not self._sash_ready and event.width > 650:
+                self.panes.sashpos(0, int(event.width*.55)); self._sash_ready = True
+        self.panes.bind("<Configure>", position_sash)
         actions = ttk.Frame(frame); actions.pack(fill="x", pady=8)
         self._button(actions, "Download selected", self.download_selected).pack(side="left", padx=(0, 8))
         self._button(actions, "Download current folder", self.download_current).pack(side="left", padx=(0, 8))
@@ -68,9 +109,85 @@ class BrowserApp:
             root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self._poll)
 
-    def _button(self, parent, text, command):
+    def _button(self, parent, text, command, **options):
         from tkinter import ttk
-        button = ttk.Button(parent, text=text, command=command); self.buttons.append(button); return button
+        button = ttk.Button(parent, text=text, command=command, **options); self.buttons.append(button); return button
+
+    def _set_preview_text(self, text):
+        self.preview_text.configure(state="normal"); self.preview_text.delete("1.0", "end")
+        self.preview_text.insert("1.0", text); self.preview_text.configure(state="disabled")
+
+    def _select_all_preview(self, event=None):
+        self.preview_text.tag_add("sel", "1.0", "end-1c"); return "break"
+
+    def find_preview(self):
+        query = self.preview_query.get()
+        self.preview_text.tag_remove("match", "1.0", "end")
+        if not query: return
+        ranges = self.preview_text.tag_ranges("sel")
+        start = str(ranges[-1]) if ranges else "1.0"
+        found = self.preview_text.search(query, start, stopindex="end", nocase=True)
+        if not found: found = self.preview_text.search(query, "1.0", stopindex=start, nocase=True)
+        if found:
+            end = f"{found}+{len(query)}c"
+            self.preview_text.tag_add("match", found, end); self.preview_text.tag_remove("sel", "1.0", "end")
+            self.preview_text.tag_add("sel", found, end); self.preview_text.see(found)
+
+    def _cancel_preview_timer(self):
+        if self.preview_after is not None:
+            self.root.after_cancel(self.preview_after); self.preview_after = None
+
+    def _preview_selection(self, event=None):
+        self._cancel_preview_timer(); self.preview_epoch += 1
+        self.preview_result = None
+        selection = self.tree.selection(); entry = self.entries.get(selection[0]) if selection else None
+        if entry is None or entry.is_dir:
+            self.preview_name.set(entry.name if entry else "Select a file")
+            self.preview_info.set("Select a file to preview its contents."); self._set_preview_text(""); return
+        self.preview_name.set(entry.name); self.preview_info.set("Waiting to read preview…"); self._set_preview_text("")
+        self.preview_after = self.root.after(200, self.preview_selected)
+
+    def preview_selected(self):
+        self._cancel_preview_timer()
+        selection = self.tree.selection(); entry = self.entries.get(selection[0]) if selection else None
+        if entry is None or entry.is_dir: return
+        if self.busy or self.external_busy():
+            self.preview_after = self.root.after(200, self.preview_selected); return
+        try:
+            client, path = self._settings()
+            key = self._key(client, path)
+            if key != self.loaded:
+                self.preview_info.set("Connect / browse to apply the current host and folder first."); return
+        except (ValueError, OSError) as error:
+            self.preview_info.set(str(error)); return
+        epoch = self.preview_epoch; remote = path.child(entry.name)
+        self.preview_name.set(entry.name); self.preview_info.set("Reading preview…")
+        def work():
+            try: return make_preview(*client.read_prefix(remote, expected_size=entry.size, cancel=self.cancel)), None
+            except Cancelled: raise
+            except Exception as error: return None, str(error)
+        def done(result):
+            if epoch != self.preview_epoch or self.loaded != key: return
+            preview, error = result
+            if error:
+                self.preview_info.set("Preview unavailable"); self._set_preview_text(error); return
+            self._show_preview(preview)
+        self._job(work, done, "Reading file preview…")
+
+    def _show_preview(self, preview):
+        self.preview_result = preview; self.preview_info.set(preview.description); self._set_preview_text(preview.text)
+        self.status.set(f"Preview: {self.preview_name.get()} · {preview.description}")
+
+    def open_local_preview(self, path=None):
+        from tkinter import filedialog
+        if self.busy or self.external_busy(): return
+        if path is None: path = filedialog.askopenfilename(parent=self.root, title="Preview a local file", filetypes=[("Text / CSV", "*.txt *.csv *.xml *.json *.log *.md"), ("All files", "*")])
+        if not path: return
+        self._cancel_preview_timer(); self.preview_epoch += 1; epoch = self.preview_epoch
+        self.preview_name.set(Path(path).name); self.preview_info.set("Reading local preview…")
+        def done(preview):
+            if epoch == self.preview_epoch: self._show_preview(preview)
+        self._job(lambda: preview_local(path), done, "Reading local file preview…")
 
     def _settings(self):
         client = FieldFoxClient(self.host.get().strip(), int(self.port.get()), float(self.timeout.get()))
@@ -130,6 +247,9 @@ class BrowserApp:
         self._job(lambda: client.browse(path, self.cancel), done, "Connecting and listing folder…")
 
     def _render(self):
+        self._cancel_preview_timer(); self.preview_epoch += 1
+        self.preview_result = None; self.preview_name.set("Select a file")
+        self.preview_info.set("Text preview · read-only · up to 256 KiB"); self._set_preview_text("")
         self.tree.delete(*self.tree.get_children()); self.entries = {}
         if self.catalog is None: return
         query = self.filter.get().casefold()
@@ -205,6 +325,7 @@ class BrowserApp:
         except OSError as error: self._error(error)
 
     def close(self):
+        self._cancel_preview_timer()
         self.closing = True; self.cancel.set()
         if not self.busy: self.root.destroy()
         else: self.status.set("Stopping transfer and cleaning temporary files; waiting for the socket timeout if needed…")

@@ -52,6 +52,13 @@ def self_test(app, result_path):
             np.testing.assert_array_equal(data["power_dbm"], section.power_dbm)
             assert "timestamp_utc" in data and "timestamp_est" in data
             csv = base / "synthetic.csv"; csv.write_text("Frequency (Hz),Power (dBm)\n1,-70\n2,-60\n3,-50\n", encoding="utf-8")
+            app.browser.open_local_preview(csv)
+            deadline = time.monotonic()+5
+            while app.jobs.busy and time.monotonic() < deadline:
+                app.root.update(); time.sleep(.01)
+            assert not app.jobs.busy and app.browser.preview_result.kind == "text"
+            assert app.browser.preview_text.cget("state") == "disabled"
+            app.show_help(); assert app.help_window.winfo_exists(); app.help_window.destroy()
             app.plots.clear(); app.plots.add_trace(table_trace(read_csv(csv)))
             app.plots.marker_x.set("2"); app.plots.add_marker(); app.plots.upper.set("-55"); app.plots.redraw()
             app.plots.canvas.draw(); export_traces(app.plots.traces, base / "trace.mat")
@@ -75,7 +82,8 @@ def self_test(app, result_path):
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset"],
+                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
+                                 "read-only file preview", "Help button / dialog"],
                       "numpy": np.__version__, "python_version": sys.version.split()[0],
                       "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}
     except Exception:

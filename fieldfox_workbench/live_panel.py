@@ -67,7 +67,7 @@ class LivePanel:
             interval = float(self.interval.get())
             if not 1 <= interval <= 3600: raise ValueError("Live interval must be 1..3600 seconds.")
             self.app.client()
-            self.monitoring = True; self._tick()
+            self.monitoring = True; self.app._activity(self.app.jobs.busy); self._tick()
         except Exception as error: self.app.error(error)
 
     def _tick(self):
@@ -79,4 +79,5 @@ class LivePanel:
 
     def stop(self):
         self.monitoring = False
+        self.app._activity(self.app.jobs.busy)
         if self.timer is not None: self.app.root.after_cancel(self.timer); self.timer = None

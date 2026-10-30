@@ -23,7 +23,8 @@ def scroll_controls(parent, width=270):
     from tkinter import ttk
     host = ttk.Frame(parent, width=width); host.pack(side="left", fill="y", padx=(0, 10)); host.pack_propagate(False)
     bar = ttk.Scrollbar(host, orient="vertical"); bar.pack(side="right", fill="y")
-    canvas = tk.Canvas(host, width=width-20, highlightthickness=0, yscrollcommand=bar.set)
+    canvas = tk.Canvas(host, width=width-20, highlightthickness=0, yscrollcommand=bar.set,
+                       background=ttk.Style(parent).lookup("TFrame", "background") or "#F3F5F9")
     canvas.pack(side="left", fill="both", expand=True); bar.configure(command=canvas.yview)
     controls = ttk.Frame(canvas); item = canvas.create_window((0, 0), window=controls, anchor="nw")
     controls.bind("<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -57,9 +58,13 @@ class FieldFoxApp:
         ttk.Label(folder, text="Session folder").pack(side="left")
         ttk.Entry(folder, textvariable=self.path).pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(folder, text="Browse…", command=self.browse).pack(side="left")
+        ttk.Button(folder, text="Load / update plot", command=self.load, style="Accent.TButton").pack(side="left", padx=(8, 0))
         content = ttk.Frame(outer); content.pack(fill="both", expand=True)
-        controls = scroll_controls(content)
+        controls = scroll_controls(content, width=290)
         self.plot_frame = ttk.Frame(content); self.plot_frame.pack(side="left", fill="both", expand=True)
+        self.empty = ttk.Frame(self.plot_frame); self.empty.place(relx=.5, rely=.45, anchor="center")
+        ttk.Label(self.empty, text="Open a recording session", style="Heading.TLabel").pack()
+        ttk.Label(self.empty, text="Choose a session folder, set a section, then load the plot.", style="Muted.TLabel").pack(pady=(8, 0))
         self.values = {}
         fields = [("start", "First sweep (included)", "0"), ("stop", "Stop sweep (excluded; blank=end)", ""),
                   ("step", "Read every Nth sweep", "1"), ("max", "Maximum displayed sweeps", "2000"),
@@ -81,7 +86,6 @@ class FieldFoxApp:
         ttk.Label(controls, text="EST = fixed UTC−05:00", foreground="#555555").grid(row=row+4, column=0, sticky="w")
         self.fold = tk.StringVar(value="Ask if ambiguous")
         ttk.Combobox(controls, textvariable=self.fold, values=["Ask if ambiguous", "Earlier occurrence", "Later occurrence"], state="readonly", width=25).grid(row=row+5, column=0, sticky="ew", pady=(4, 6))
-        ttk.Button(controls, text="Load / update plot", command=self.load).grid(row=row+6, column=0, sticky="ew", pady=3)
         buttons = ttk.Frame(outer); buttons.pack(fill="x", pady=(10, 5))
         for label, command in [("Export section .mat", self.export_mat), ("Save plot image", self.save_image),
                                ("Export full session CSV", lambda: self.export_full("csv")),
@@ -167,6 +171,8 @@ class FieldFoxApp:
         self._job(work, done, "Reading selected sweeps…")
 
     def _embed(self, figure: Any) -> None:
+        if self.empty is not None:
+            self.empty.destroy(); self.empty = None
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         import matplotlib.pyplot as plt
         if self.toolbar is not None:

@@ -184,16 +184,16 @@ class Connection:
         check_cancel(self.cancel)
         self.sock.sendall((command + "\n").encode("utf-8"))
 
-    def _receive(self):
+    def _receive(self, limit: int = CHUNK_BYTES):
         check_cancel(self.cancel)
-        data = self.sock.recv(CHUNK_BYTES)
+        data = self.sock.recv(limit)
         if not data:
             raise BrowserError("Instrument closed the connection before the response was complete")
         self.buffer.extend(data)
 
     def _exact(self, count: int) -> bytes:
         while len(self.buffer) < count:
-            self._receive()
+            self._receive(min(CHUNK_BYTES, count-len(self.buffer)))
         data = bytes(self.buffer[:count]); del self.buffer[:count]
         return data
 
@@ -218,8 +218,7 @@ class Connection:
     def catalog(self, path: RemotePath) -> Catalog:
         return parse_catalog(self.text(f'MMEM:CAT? "{path}"'))
 
-    def download(self, path: RemotePath, output: Path, *, expected_size: int | None,
-                 max_bytes: int, progress: Callable[[str], None] | None = None) -> dict:
+    def _file_length(self, path: RemotePath) -> int:
         self._send(f'MMEM:DATA? "{path}"')
         if self._exact(1) != b"#":
             raise BrowserError("Expected an IEEE 488.2 binary block; the path may be missing, inaccessible or not a file")
@@ -229,7 +228,31 @@ class Connection:
         raw_size = self._exact(int(digits))
         if not raw_size.isdigit():
             raise BrowserError("Malformed binary block length")
-        length = int(raw_size)
+        return int(raw_size)
+
+    def _block_ending(self):
+        ending = self._exact(1)
+        if ending == b"\r": ending = self._exact(1)
+        if ending != b"\n": raise BrowserError("Unexpected binary block terminator")
+
+    def read_prefix(self, path: RemotePath, *, max_bytes: int, expected_size: int | None = None) -> tuple[bytes, int]:
+        """Read a bounded prefix on a dedicated connection, closed by the caller.
+
+        MMEM:DATA? has no offset/range argument. For a larger file, deliberately
+        stop at max_bytes and close this connection instead of draining the file.
+        Never reuse a connection after a partial response.
+        """
+        length = self._file_length(path)
+        if expected_size is not None and length != expected_size:
+            raise BrowserError("Remote file size changed. Refresh the folder before previewing.")
+        data = self._exact(min(max_bytes, length))
+        if length <= max_bytes: self._block_ending()
+        check_cancel(self.cancel)
+        return data, length
+
+    def download(self, path: RemotePath, output: Path, *, expected_size: int | None,
+                 max_bytes: int, progress: Callable[[str], None] | None = None) -> dict:
+        length = self._file_length(path)
         if length > max_bytes:
             raise BrowserError(f"File advertises {length} bytes, exceeding the {max_bytes}-byte limit")
         if expected_size is not None and length != expected_size:
@@ -244,11 +267,7 @@ class Connection:
                     progress(f"{path.name}: {length-remaining:,} / {length:,} bytes")
             # TCP SCPI responses terminate with LF or CRLF. Consume it before
             # another query; a missing terminator fails rather than desynchronizes.
-            ending = self._exact(1)
-            if ending == b"\r":
-                ending = self._exact(1)
-            if ending != b"\n":
-                raise BrowserError("Unexpected binary block terminator")
+            self._block_ending()
             check_cancel(self.cancel)
         return {"remote_path": str(path), "local_path": str(output), "bytes": length, "sha256": digest.hexdigest()}
 
@@ -299,3 +318,12 @@ class FieldFoxClient:
     def download_folder(self, remote: str | RemotePath, output: str | Path, **options) -> dict:
         from .download import download_folder
         return download_folder(self, RemotePath.parse(remote), Path(output), **options)
+
+    def read_prefix(self, remote: str | RemotePath, *, max_bytes: int = 256*1024,
+                    expected_size: int | None = None, cancel: threading.Event | None = None) -> tuple[bytes, int]:
+        path = RemotePath.parse(remote)
+        if not path.parts: raise BrowserError("Select a file to preview.")
+        if not isinstance(max_bytes, int) or not 1 <= max_bytes <= 1024**2:
+            raise BrowserError("Preview limit must be 1 byte..1 MiB.")
+        with self.connection(cancel) as connection:
+            return connection.read_prefix(path, max_bytes=max_bytes, expected_size=expected_size)

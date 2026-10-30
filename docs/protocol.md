@@ -12,6 +12,7 @@ dependency, automatic preset or automatic operating-mode switch.
 | Identity | `*IDN?` |
 | Browse | [`MMEM:CAT?`](https://helpfiles.keysight.com/csg/FFProgrammingHelpWebHelp/MMEMory_CATalog.htm), absolute INTERNAL/SDCARD/USBDISK aliases |
 | Download | [`MMEM:DATA?`](https://helpfiles.keysight.com/csg/FFProgrammingHelpWebHelp/MMEMory_DATA.htm), definite IEEE 488.2 block, length checked against catalogue |
+| File preview | Same `MMEM:DATA?` query on a dedicated connection; read at most 256 KiB, then close the connection |
 | PNG capture | [`MMEM:STOR:IMAG`](https://helpfiles.keysight.com/csg/FFProgrammingHelpWebHelp/MMEMory_STORe_IMAGe.htm), then `*OPC?`, catalogue and download |
 | CSV capture | [`MMEM:STOR:FDAT`](https://helpfiles.keysight.com/csg/FFProgrammingHelpWebHelp/MMEMory_STORe_FDATa.htm), then `*OPC?`, catalogue and download |
 | Capture cleanup | `MMEM:DEL` of the unique generated file only, as in Keysight's [image transfer example](https://helpfiles.keysight.com/csg/FFProgrammingHelpWebHelp/Examples/Transfer_Image_to_PC.htm) |
@@ -44,6 +45,17 @@ Downloads plan a recursive tree before copying, validate portable filenames and
 case collisions, stream to a private staging directory, recheck catalogues and
 publish to a new destination. Files have local SHA-256 hashes. Same-size remote
 rewrites cannot be detected by catalogue rechecks; copy completed sessions.
+
+File preview uses the same validated definite-length binary block header and
+catalogue-size check as downloads. The command has no byte-range parameter. If
+the file exceeds 256 KiB, only that prefix is read and the dedicated socket is
+closed; it is never reused with an unread block remaining. For shorter files the
+entire block and line ending are consumed. Cancellation closes the connection.
+This bounds application reads and memory, but does not promise that firmware
+sends only the prefix. Behavior after early socket closure remains unverified on
+an N9917B. Preview makes no remote writes or local download files. Plain text is
+decoded for display only; binary input gets a hex view capped at 4 KiB. Changed
+selections invalidate in-flight results before they can replace the new preview.
 
 ## Binary decoder investigation actually performed
 
