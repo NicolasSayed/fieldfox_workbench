@@ -64,12 +64,18 @@ def self_test(app, result_path):
             assert app.playback.outer.master is app.plots.playback_frame
             app.playback.move(1)
             assert app.plots.traces[0].name == "Sweep 1"
-            app.playback.summary("Maximum hold")
+            app.playback.max_hold.set(True); app.playback.min_hold.set(True)
+            app.playback.move(1)
+            held = {t.name: t for t in app.plots.traces}
+            np.testing.assert_array_equal(held["Max hold"].y, section.power_dbm.max(axis=0))
+            np.testing.assert_array_equal(held["Min hold"].y, section.power_dbm.min(axis=0))
+            app.playback.reset_holds()
+            np.testing.assert_array_equal(next(t for t in app.plots.traces if t.name == "Min hold").y, section.power_dbm[2])
             app.root.update()
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "session playback / maximum hold"],
+                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset"],
                       "numpy": np.__version__, "python_version": sys.version.split()[0],
                       "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}
     except Exception:

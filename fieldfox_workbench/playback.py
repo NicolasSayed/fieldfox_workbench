@@ -4,12 +4,51 @@ import numpy as np
 from .traces import Trace
 
 
+class RunningHolds:
+    """Extrema from the start/reset row through the current playback row.
+
+    Forward jumps include intervening selected rows. Backward seeks recalculate
+    to avoid retaining future data; seeking before the reset row reanchors there.
+    Only two point-sized buffers are kept in addition to the loaded section.
+    """
+    def __init__(self, values):
+        self.values = np.asarray(values)
+        if self.values.ndim != 2 or not all(self.values.shape):
+            raise ValueError("Running holds need a nonempty sweeps × points matrix.")
+        self.start_row = 0; self.last_row = -1
+        self.maximum = self.minimum = None
+
+    def update(self, row):
+        if not 0 <= row < len(self.values): raise ValueError("Hold row is outside the selected section.")
+        if row < self.start_row: self.start_row = row
+        if self.maximum is None or row < self.last_row:
+            block = self.values[self.start_row:row+1]
+            self.maximum = block.max(axis=0)
+            self.minimum = block.min(axis=0)
+        elif row > self.last_row:
+            block = self.values[max(self.start_row, self.last_row+1):row+1]
+            np.maximum(self.maximum, block.max(axis=0), out=self.maximum)
+            np.minimum(self.minimum, block.min(axis=0), out=self.minimum)
+        self.last_row = row
+        return self.maximum, self.minimum
+
+    def reset(self, row):
+        if not 0 <= row < len(self.values): raise ValueError("Hold reset row is outside the selected section.")
+        self.start_row = row; self.last_row = -1
+        self.maximum = self.minimum = None
+        return self.update(row)
+
+
 class Playback:
     def __init__(self, app, parent):
         import tkinter as tk
         from tkinter import ttk
         self.app = app; self.rec = self.section = None; self.playing = False; self.timer = None
-        self._shown = self._active_trace = None
+        self._shown = self._active_trace = self.holds = None
+        self._active_traces = []
+        self.max_hold = tk.BooleanVar(); self.min_hold = tk.BooleanVar()
+        self.max_hold.trace_add("write", lambda *_: self.show())
+        self.min_hold.trace_add("write", lambda *_: self.show())
         self.index = tk.IntVar(); self.delay = tk.StringVar(value="250")
         self.index.trace_add("write", lambda *_: self.show())
         self.status = tk.StringVar(value="Load a session section on the Session spectrogram tab first.")
@@ -21,42 +60,63 @@ class Playback:
         buttons = ttk.Frame(outer); buttons.pack(fill="x")
         self.buttons = []
         for text, command in [("Previous", lambda: self.move(-1)), ("Play", self.toggle), ("Next", lambda: self.move(1)),
-                              ("Maximum hold", lambda: self.summary("Maximum hold")),
-                              ("Minimum hold", lambda: self.summary("Minimum hold")),
-                              ("Power mean", lambda: self.summary("Power mean"))]:
+                              ("Section mean", lambda: self.summary("Power mean"))]:
             button = ttk.Button(buttons, text=text, command=command, state="disabled")
             button.pack(side="left", padx=(0, 5)); self.buttons.append(button)
             if text == "Play": self.play_button = button
         ttk.Label(buttons, text="Delay (ms)").pack(side="left", padx=(8, 4))
         ttk.Entry(buttons, textvariable=self.delay, width=7).pack(side="left")
+        holding = ttk.Frame(outer); holding.pack(fill="x", pady=(3, 0))
+        for text, variable in [("Max hold", self.max_hold), ("Min hold", self.min_hold)]:
+            button = ttk.Checkbutton(holding, text=text, variable=variable, state="disabled")
+            button.pack(side="left", padx=(0, 10)); self.buttons.append(button)
+        self.reset_button = ttk.Button(holding, text="Reset holds here", command=self.reset_holds, state="disabled")
+        self.reset_button.pack(side="left", padx=(0, 10)); self.buttons.append(self.reset_button)
+        ttk.Label(holding, text="Selected sweeps: start/reset → cursor; backward seeks recalculate.").pack(side="left")
         ttk.Label(outer, textvariable=self.status, wraplength=1100).pack(fill="x", pady=(3, 1))
 
     def loaded(self, rec, section):
         self.stop(); self.rec, self.section = rec, section
         self._shown = self._active_trace = None
+        self._active_traces = []; self.holds = RunningHolds(section.power_dbm)
         self.slider.configure(to=len(section.sweep_indices)-1, state="normal"); self.index.set(0)
         for button in self.buttons: button.configure(state="normal")
         self.show()
 
-    def trace(self, values, name):
+    def trace(self, values, name, **metadata):
         return Trace(name, self.section.frequency_hz, values, "Frequency (Hz)", "Power (dBm)", str(self.rec.path),
-                     {"selected_sweep_indices": self.section.sweep_indices.tolist(), "trace_slot": self.section.trace_slot})
+                     {"selected_sweep_indices": self.section.sweep_indices.tolist(), "trace_slot": self.section.trace_slot, **metadata})
 
     def show(self):
         if self.section is None: return
         try:
             index = max(0, min(self.index.get(), len(self.section.sweep_indices)-1))
-            key = (id(self.section), index, self.app.viewer.timezone.get(), self.app.viewer.fold.get())
-            if key == self._shown and any(t is self._active_trace for t in self.app.plots.traces): return
-            trace = self.trace(self.section.power_dbm[index], f"Sweep {self.section.sweep_indices[index]}")
+            maximum, minimum = self.holds.update(index)
+            key = (id(self.section), index, self.app.viewer.timezone.get(), self.app.viewer.fold.get(),
+                   self.max_hold.get(), self.min_hold.get(), self.holds.start_row)
+            if key == self._shown and all(any(t is active for t in self.app.plots.traces) for active in self._active_traces): return
+            trace = self.trace(self.section.power_dbm[index], f"Sweep {self.section.sweep_indices[index]}", trace_role="playback_current")
             from fieldfox_recording.timezones import convert_timestamps
             converted = convert_timestamps(self.section.timestamp_ticks[index:index+1], source_timezone=self.app.viewer.timezone.get() or None,
                           dst_fold={"Ask if ambiguous": None, "Earlier occurrence": 0, "Later occurrence": 1}[self.app.viewer.fold.get()])
             trace.metadata.update({k: v[0].item() for k, v in converted.items() if isinstance(v, np.ndarray) and len(v) == 1})
-            self.app.plots.add_trace(trace, replace=True)
+            traces = [trace]
+            first = int(self.section.sweep_indices[self.holds.start_row]); last = int(self.section.sweep_indices[index])
+            for enabled, values, name, role in [(self.max_hold.get(), maximum, "Max hold", "playback_max_hold"),
+                                                 (self.min_hold.get(), minimum, "Min hold", "playback_min_hold")]:
+                if enabled:
+                    traces.append(self.trace(np.array(values, dtype=np.float64, copy=True), name, trace_role=role, hold_start_sweep=first, hold_stop_sweep=last,
+                                  hold_start_row=self.holds.start_row, hold_stop_row=index,
+                                  hold_scope="All selected rows from start/reset through cursor; backward seeks recalculate."))
+            self.app.plots.set_playback_traces(traces, clear_markers=key[:2] != (self._shown or ())[:2])
             self._shown, self._active_trace = key, trace
-            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s\nUTC {converted['timestamp_utc'][0]}   EST {converted['timestamp_est'][0]}")
+            self._active_traces = traces
+            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s · hold sweeps {first}–{last}\nUTC {converted['timestamp_utc'][0]}   EST {converted['timestamp_est'][0]}")
         except Exception as error: self.stop(); self.app.error(error)
+
+    def reset_holds(self):
+        if self.section is None: return
+        self.holds.reset(self.index.get()); self._shown = None; self.show()
 
     def move(self, amount):
         if self.section is not None:
@@ -99,17 +159,17 @@ class Playback:
 
     def summary(self, kind):
         if self.section is None: self.app.error(ValueError("Load a session section first.")); return
+        if kind in {"Maximum hold", "Minimum hold"}:
+            (self.max_hold if kind == "Maximum hold" else self.min_hold).set(True)
+            self.app.tabs.select(self.app.trace_tab); return
         self.stop()
         data = self.section.power_dbm
-        if kind == "Maximum hold": values = data.max(axis=0)
-        elif kind == "Minimum hold": values = data.min(axis=0)
-        else:
-            # Numerically stable mean of linear power, bounded by the section cap.
-            reference = data.max(axis=0).astype(np.float64)
-            total = np.zeros(data.shape[1], dtype=np.float64)
-            for row in data: total += np.power(10., (row-reference)/10.)
-            values = reference + 10*np.log10(total/len(data))
+        # Numerically stable mean of linear power, bounded by the section cap.
+        reference = data.max(axis=0).astype(np.float64)
+        total = np.zeros(data.shape[1], dtype=np.float64)
+        for row in data: total += np.power(10., (row-reference)/10.)
+        values = reference + 10*np.log10(total/len(data))
         try:
-            self.app.plots.add_trace(self.trace(values, kind))
+            self.app.plots.add_trace(self.trace(values, "Section power mean"))
             self.app.tabs.select(self.app.trace_tab)
         except Exception as error: self.app.error(error)

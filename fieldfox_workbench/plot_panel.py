@@ -17,6 +17,7 @@ class PlotPanel:
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         self.app = app; self.traces = []; self.table = None; self.markers = []
+        self.playback_traces = []
         self.title = tk.StringVar(value="Trace comparison")
         self.xlabel = tk.StringVar(value="Frequency (Hz)"); self.ylabel = tk.StringVar(value="Power (dBm)")
         self.lower = tk.StringVar(); self.upper = tk.StringVar(); self.xmin = tk.StringVar(); self.xmax = tk.StringVar()
@@ -99,11 +100,24 @@ class PlotPanel:
     def add_trace(self, trace, *, replace=False):
         if not replace and (len(self.traces) >= 16 or sum(len(t.x) for t in self.traces)+len(trace.x) > 2_000_000):
             raise ValueError("Overlay limit reached (16 traces / two million points). Clear traces first.")
-        if replace: self.traces = []; self.markers = []
+        if replace: self.traces = []; self.playback_traces = []; self.markers = []
         if self.traces and (trace.x_label != self.traces[0].x_label or trace.y_label != self.traces[0].y_label):
             raise ValueError("Overlay axes differ. Clear traces before plotting different columns or units.")
         self.traces.append(trace)
         self.xlabel.set(trace.x_label); self.ylabel.set(trace.y_label)
+        self.redraw()
+
+    def set_playback_traces(self, traces, *, clear_markers=True):
+        """Update current/hold curves together, preserving compatible CSV overlays."""
+        others = [t for t in self.traces if not any(t is old for old in self.playback_traces)]
+        combined = list(traces) + others
+        if len(combined) > 16 or sum(len(t.x) for t in combined) > 2_000_000:
+            raise ValueError("Playback and overlays exceed 16 traces / two million points. Clear overlays or narrow the selected frequency range.")
+        if any((t.x_label, t.y_label) != (combined[0].x_label, combined[0].y_label) for t in combined):
+            raise ValueError("Overlay axes differ from playback. Clear traces before viewing this session.")
+        self.traces = combined; self.playback_traces = list(traces)
+        if clear_markers: self.markers.clear()
+        self.xlabel.set(traces[0].x_label); self.ylabel.set(traces[0].y_label)
         self.redraw()
 
     @staticmethod
@@ -128,7 +142,10 @@ class PlotPanel:
             raise ValueError("Logarithmic X needs positive X values and limits.")
         ax = self.axes; ax.clear(); summaries = []
         for trace in self.traces:
-            ax.plot(trace.x, trace.y, linewidth=1, label=trace.name)
+            styles = {"playback_current": {"color": "tab:blue"},
+                      "playback_max_hold": {"color": "tab:red", "linestyle": "--"},
+                      "playback_min_hold": {"color": "tab:green", "linestyle": ":"}}
+            ax.plot(trace.x, trace.y, linewidth=1, label=trace.name, **styles.get(trace.metadata.get("trace_role"), {}))
             stats = trace.statistics(lower, upper)
             summaries.append(f"{trace.name}: peak {stats['peak_y']:.6g} at {stats['peak_x']:.9g}; {stats['limit_result']} ({stats['failed_points']} outside)")
         for value, name in [(lower, "Lower limit"), (upper, "Upper limit")]:
@@ -159,7 +176,7 @@ class PlotPanel:
     def clear_markers(self): self.markers.clear(); self.redraw_safe()
 
     def clear(self):
-        self.traces.clear(); self.markers.clear(); self.redraw_safe()
+        self.traces.clear(); self.playback_traces.clear(); self.markers.clear(); self.redraw_safe()
 
     def export(self):
         from tkinter import filedialog

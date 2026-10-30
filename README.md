@@ -20,7 +20,7 @@ to copy beside it. Unsigned builds may trigger Windows reputation prompts.
 | Ethernet browser | Internal / SD / USB listings, filtering, recursive session downloads, progress, cancel, file SHA-256, JSON listings |
 | Integrated loading | Downloaded sessions, CSV files and images open in the matching tab; local open and recent files |
 | Recordings | GPSA / supported RTSA state and trace decoding, selected-section spectrogram, frequency/sweep selection, color limits/maps, zoom and pan |
-| Playback | Slider, previous/play/pause/next, speed, UTC/EST and hold/mean controls directly above the trace plot on the same tab |
+| Playback | Slider, previous/play/pause/next, speed, UTC/EST, running max/min hold curves with reset, and a section mean on the trace tab |
 | CSV plotting | Header/metadata handling, X/Y column mapping, explicit X scaling, decoder sweep/slot selection, up to 16 compatible overlays |
 | Analysis | Nearest-point markers, horizontal upper/lower limits with pass/fail counts, log X, axis ranges and JSON plot presets |
 | Capture | Instrument screenshot PNG, formatted trace CSV, local image preview and unchanged image copies |
@@ -64,6 +64,29 @@ no embedded time zone. MAT section exports include `timestamp_instrument`,
 `timestamp_utc`, `timestamp_est`, DST-aware `timestamp_eastern`, original int64
 ticks and converted UTC ticks. Use `America/New_York` only for an instrument clock
 that follows daylight saving time; repeated times require a fold selection.
+
+### Running max hold / min hold
+
+On **Traces / CSV**, enable **Max hold**, **Min hold**, or both. The blue curve is
+the current sweep; the red dashed and green dotted curves track the per-frequency
+maximum/minimum as playback advances. They continue through Play/Pause/Next and
+slider navigation, and can be toggled without pausing. Compatible CSV overlays and
+the section mean remain visible during playback.
+
+- Holds cover every **selected row** from the section start or most recent reset
+  through the current cursor. Forward jumps include intervening selected rows.
+- **Reset holds here** restarts both holds at the current sweep without pausing.
+- Seeking backward recalculates to the cursor, removing later peaks/troughs.
+  Moving before the reset position starts a new interval there.
+- Loading a section or restarting playback from the end starts over.
+- Only loaded rows count: sweeps omitted by step or automatic thinning do not
+  contribute. Select the desired interval and step for the coverage you need.
+- Overlay CSV/MAT exports and PDF reports include the displayed hold curves.
+  MAT metadata records the hold's start/stop sweep and selected-row coverage.
+
+**Section mean** remains a fixed mean in linear power over the entire selected
+section. It is separate from the two running holds. Holds keep only two additional
+point-sized buffers and reuse the loaded section; no recording is reread per frame.
 
 ## Install from source / keep the CLIs
 

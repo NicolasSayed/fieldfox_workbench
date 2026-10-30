@@ -1,4 +1,4 @@
-# Release 0.1.1 validation
+# Release 0.1.2 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -6,9 +6,15 @@ tzdata 2026.6 and PyInstaller 6.22.3.
 
 ## Executed checks
 
-`python -m pytest -q -rs`: **204 passed, 1 skipped**. The skipped integration test
+`python -m pytest -q -rs`: **213 passed, 1 skipped**. The skipped integration test
 requires `FIELDFOX_TEST_SESSION`; no real session was available. Playback slider/plot synchronization and rejection of mismatched, missing or mixed
 Python/VC runtimes are included in the suite.
+
+Running-hold tests use nonmonotonic synthetic rows to check both extrema during
+actual timed playback, forward jumps including intermediate peaks, backward seeks
+without future-data leakage, reset windows, independent toggles, reload, retained
+CSV overlays and MAT snapshots with interval metadata. The hold engine retains
+only two point-sized buffers and references the existing selected data.
 
 Tests cover GPSA/RTSA version branches, binary headers and record boundaries,
 partition stores, negative/truncated data, RPX indexes/CRC, frequency axes, section
@@ -21,7 +27,7 @@ markers/limits, overlay MAT round-trip, report output and a single-worker guard.
 The release is a single EXE. Its frozen `--self-test RESULT_JSON` checks creation
 of all six tabs, synthetic session decode and TkAgg rendering, CSV columns,
 markers/limits, section MAT round-trip with UTC/EST fields, overlay MAT, Pillow
-image preview, PDF report and playback/maximum hold. It verifies that playback
+image preview, PDF report, both running holds and reset. It verifies that playback
 controls are embedded in the trace page and that changing the row updates the plot.
 No network or instrument is used by this diagnostic. Temporary synthetic files
 are removed.

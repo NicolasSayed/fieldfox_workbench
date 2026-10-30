@@ -1,33 +1,29 @@
-## Playback on the trace page
+## Running max hold and min hold during playback
 
-The session playback bar now sits directly above the trace plot on **Traces / CSV**.
-Drag the slider, use the keyboard/mouse wheel or Previous / Play / Pause / Next
-while viewing the sweep. Speed, UTC/EST timestamps and maximum/minimum hold / power
-mean controls are on the same page. The separate playback tab is removed, and the
-first selected sweep appears automatically after a session loads. Playback's cursor
-and displayed trace stay in sync.
+Enable **Max hold**, **Min hold**, or both on **Traces / CSV**. Both hold curves stay
+visible alongside the current sweep and update as playback advances. They can be
+toggled without pausing. Max hold is red/dashed; min hold is green/dotted.
 
-## One-file Windows build
+- **Reset holds here** starts a new interval at the current sweep without pausing.
+- Forward jumps include intervening selected rows. Backward seeks recalculate to
+  the cursor so later peaks/troughs do not leak into earlier views.
+- Moving before a reset reanchors there; loading a section or restarting playback
+  from the end starts over.
+- Holds cover the loaded selection only. Rows omitted by step/thinning do not count.
+- Compatible CSV overlays and the fixed section mean remain visible during playback.
+- CSV/MAT exports and reports include the displayed holds; MAT metadata includes
+  the hold interval. Exported snapshots are independent of later playback updates.
 
-Download **FieldFoxWorkbench-standalone.exe** and run it. Python and its runtime DLLs
-are included; no Python installation or `_internal` folder is required. The EXE is
-approximately 70 MiB and extracts its runtime temporarily when launched. Windows
-x64; unsigned binary. The default build script now produces only the single EXE.
+Holds reuse the selected section and keep two point-sized extrema buffers. The
+recording is not reread per frame. The Section mean button is a separate fixed
+summary in linear power over the whole selected section.
 
-The packaging process requires 64-bit CPython 3.11, preserves an incompatible local
-build environment and uses a separate 3.11 environment, cleans PyInstaller caches,
-explicitly bundles interpreter/VC DLLs, and audits the final bootloader cookie,
-DLL names, architecture and hashes. It rejects mixed Python 3.13 runtimes. The
-frozen GUI/export self-test runs from an empty directory with Python removed from
-PATH and a temporary path containing spaces and Unicode.
+Download **FieldFoxWorkbench-standalone.exe** and run it: a single Windows x64 EXE,
+approximately 70 MiB, including Python 3.11 and runtime DLLs. No Python install or
+adjacent `_internal` folder is needed. The 300 MiB cap and runtime audit remain.
 
-The previous published EXE was verified to contain Python 3.11; the reported
-`python313.dll` failure could not be reproduced without the exact error/binary.
-This update adds build guards and diagnostic evidence rather than claiming that
-an unobserved Windows-loader cause has been proven. Use the new EXE and compare
-its SHA-256 with `SHA256SUMS.txt` if a startup issue persists.
-
-204 tests passed; one real-recording test skipped because no recording was supplied.
-See `build-report.json` for the frozen self-test, runtime audit, exact size and hash.
-CLI tools, recording decoding, screenshots, CSV/MAT/PDF exports and fixed EST remain.
-Live N9917B operation still needs hardware validation; network tests use a simulator.
+213 tests passed; one test skipped because no real recording was supplied. The
+frozen self-test also checks both running holds, updates and reset alongside
+rendering, decoding, UTC/EST MAT export, image preview and PDF reports. Exact sizes,
+SHA-256 and runtime checks are in `build-report.json` and `SHA256SUMS.txt`.
+Live N9917B functionality still needs hardware validation; network tests use a simulator.
