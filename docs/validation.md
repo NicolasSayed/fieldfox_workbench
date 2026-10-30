@@ -1,4 +1,4 @@
-# Release 0.1.3 validation
+# Release 0.1.4 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -21,6 +21,12 @@ session data and a loopback file server: Explorer split/text preview, loaded
 spectrogram, trace playback with both holds and the Help window. Window sizing
 respects the Windows work area; plot controls scroll and the load action remains
 visible. The application icon is independently authored; no vendor artwork is used.
+
+The [screenshot tour](UI_TOUR.md) contains four native Windows captures from
+0.1.4 with synthetic data. During capture, the spectrogram's export row was found
+to be clipped by the plot's requested height. The export row and status now reserve
+space below the plot before the expandable content is laid out. The final native
+capture confirms that MAT, image, CSV and NPZ buttons are visible together.
 
 Repeat source tests encountered intermittent Tcl/Tk script-read errors in this
 PC's Microsoft Store Python installation. A separate 15-root Tk startup check

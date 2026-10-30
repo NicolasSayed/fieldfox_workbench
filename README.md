@@ -4,6 +4,9 @@ An independent, lightweight desktop application for the Keysight FieldFox N9917B
 workflow: Ethernet files, recorded sessions, CSV traces, screenshots and reports.
 It runs without Data Link, VISA, MATLAB, a web server or a browser runtime.
 
+**[See the interface: screenshot tour](docs/UI_TOUR.md)** — Explorer preview,
+spectrogram and exports, playback with both holds, and the Help window.
+
 ## Run on Windows
 
 Download `FieldFoxWorkbench-standalone.exe` from

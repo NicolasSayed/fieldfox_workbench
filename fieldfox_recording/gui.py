@@ -86,12 +86,12 @@ class FieldFoxApp:
         ttk.Label(controls, text="EST = fixed UTC−05:00", foreground="#555555").grid(row=row+4, column=0, sticky="w")
         self.fold = tk.StringVar(value="Ask if ambiguous")
         ttk.Combobox(controls, textvariable=self.fold, values=["Ask if ambiguous", "Earlier occurrence", "Later occurrence"], state="readonly", width=25).grid(row=row+5, column=0, sticky="ew", pady=(4, 6))
-        buttons = ttk.Frame(outer); buttons.pack(fill="x", pady=(10, 5))
+        buttons = ttk.Frame(outer); buttons.pack(side="bottom", fill="x", pady=(10, 5), before=content)
         for label, command in [("Export section .mat", self.export_mat), ("Save plot image", self.save_image),
                                ("Export full session CSV", lambda: self.export_full("csv")),
                                ("Export full session NPZ", lambda: self.export_full("npz"))]:
             ttk.Button(buttons, text=label, command=command).pack(side="left", padx=(0, 7))
-        ttk.Label(outer, textvariable=self.status, wraplength=1120).pack(fill="x")
+        ttk.Label(outer, textvariable=self.status, wraplength=1120).pack(side="bottom", fill="x", before=buttons)
         root.after(100, self._poll)
         if not embedded:
             root.protocol("WM_DELETE_WINDOW", self.close)

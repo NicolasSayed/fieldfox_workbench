@@ -1,29 +1,22 @@
-## Professional desktop layout and Explorer previews
+## Screenshot walkthrough and visible spectrogram exports
 
-The app now has a consistent light theme, clearer spacing, a branded icon and an
-activity indicator. The Help tab is replaced by a **Help · F1** button that opens
-a scrollable guide. Plot controls and CSV column mapping sit in scrollable
-sidebars; session playback, max hold and min hold remain above the trace plot.
+See the [screenshot tour](https://github.com/NicolasSayed/fieldfox_workbench/blob/main/docs/UI_TOUR.md)
+for the actual Windows interface: Explorer text preview, session spectrogram,
+playback with both running holds and the separate Help window. All screenshots
+use synthetic data and a loopback instrument simulator.
 
-The **Explorer** has a resizable, read-only file preview beside the folder list.
-Select a remote file or open a local file to view text, with encoding and byte
-counts, Find next and Wrap. Binary files show hex. Reads are capped at 256 KiB,
-hex output at 4 KiB, and larger files are marked prefix only. Remote preview uses
-a dedicated read connection and closes it after the prefix; it makes no remote
-changes. Stale selection results are discarded.
+The spectrogram now reserves space for its export buttons and status below the
+plot, preventing the plot's requested height from pushing them out of the window.
+The MAT, image, full CSV and full NPZ actions remain visible together while the
+selection controls scroll independently.
 
-Download **FieldFoxWorkbench-standalone.exe** and run it: a single Windows x64
-EXE, approximately 70 MiB, including Python 3.11 and runtime DLLs. No Python
-installation or adjacent `_internal` folder is needed. Python CLI/API entry
-points, UTC/EST MAT export and running playback holds remain available.
+Download **FieldFoxWorkbench-standalone.exe** for the single-file Windows x64
+application. Python 3.11 and runtime DLLs are included. The professional theme,
+Help / F1, bounded text/hex previews, playback holds, UTC/EST MAT exports and
+Python CLI/API entry points from 0.1.3 remain available.
 
-**225 tests passed; one skipped** because no real recording was supplied. The
-offline frozen-app test covers all five tabs, the preview and Help window, both
-running holds, rendering, decoding, UTC/EST MAT export, images and PDF reports.
-The desktop layout was also inspected with synthetic data and a loopback server.
-Exact size, SHA-256 and runtime checks are in `build-report.json` and
-`SHA256SUMS.txt`. The enforced EXE size cap remains 300 MiB.
-
-Live N9917B functionality still needs hardware validation, including early closure
-of large preview transfers. Network tests use a simulator; no vendor programs,
-real recordings or decoded user data are included.
+225 tests passed; one real-recording test skipped. The isolated frozen-app startup
+and export checks passed, including both holds, preview and Help. Exact size and
+SHA-256 are in `build-report.json` and `SHA256SUMS.txt`; the enforced size cap is
+300 MiB. Live N9917B validation remains pending. No vendor programs, real user
+recordings or decoded user data are included.
