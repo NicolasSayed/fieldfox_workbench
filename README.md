@@ -6,11 +6,12 @@ It runs without Data Link, VISA, MATLAB, a web server or a browser runtime.
 
 ## Run on Windows
 
-Download a build from [Releases](https://github.com/NicolasSayed/fieldfox_workbench/releases).
-Extract the portable ZIP and run `FieldFoxWorkbench.exe` beside its `_internal`
-folder. The standalone EXE is an alternative that unpacks its runtime temporarily
-at each launch. Both include Python and all required libraries. The portable
-folder starts faster. Unsigned builds may trigger Windows reputation prompts.
+Download `FieldFoxWorkbench-standalone.exe` from
+[Releases](https://github.com/NicolasSayed/fieldfox_workbench/releases/latest) and run it.
+This is a **single-file Windows x64 application**, including Python 3.11 and the
+required runtime DLLs. Python does not need to be installed on the target PC.
+It unpacks its runtime temporarily at each launch; there is no `_internal` folder
+to copy beside it. Unsigned builds may trigger Windows reputation prompts.
 
 ## Features
 
@@ -19,13 +20,13 @@ folder starts faster. Unsigned builds may trigger Windows reputation prompts.
 | Ethernet browser | Internal / SD / USB listings, filtering, recursive session downloads, progress, cancel, file SHA-256, JSON listings |
 | Integrated loading | Downloaded sessions, CSV files and images open in the matching tab; local open and recent files |
 | Recordings | GPSA / supported RTSA state and trace decoding, selected-section spectrogram, frequency/sweep selection, color limits/maps, zoom and pan |
-| Playback | Sweep slider, previous/next/play, maximum/minimum hold and mean in linear power |
+| Playback | Slider, previous/play/pause/next, speed, UTC/EST and hold/mean controls directly above the trace plot on the same tab |
 | CSV plotting | Header/metadata handling, X/Y column mapping, explicit X scaling, decoder sweep/slot selection, up to 16 compatible overlays |
 | Analysis | Nearest-point markers, horizontal upper/lower limits with pass/fail counts, log X, axis ranges and JSON plot presets |
 | Capture | Instrument screenshot PNG, formatted trace CSV, local image preview and unchanged image copies |
 | SA operation | Current trace capture using actual X values and reported units, optional live polling, center/span/RBW, Hold/Run/Single |
 | Export | Selected spectrogram MAT with UTC/EST, full-session CSV/NPZ, overlay CSV/MAT, PNG/PDF figures, multipage PDF report with notes, sources, plots and screenshot |
-| Packaging | Reproducible PyInstaller scripts, portable and standalone builds, 300 MiB size gate and frozen-app self-test |
+| Packaging | One-file PyInstaller build, bundled Python/VC runtime audit, 300 MiB size gate and isolated frozen-app self-test |
 
 This covers the common data retrieval and analysis workflows. It is **not a full
 Data Link replacement**: calibration-kit/cable editors, proprietary instrument
@@ -42,8 +43,11 @@ features are tested against a loopback simulator, not claimed hardware-validated
 2. The session opens on **Session spectrogram**. Set an inclusive first sweep,
    exclusive stop sweep, trace slot, frequency range and maximum displayed rows.
    Click **Load / update plot**. Large sections are thinned, not averaged.
-3. Use **Session playback** for individual sweeps or hold/mean curves; curves appear
-   on **Traces / CSV**. Export the spectrogram's selected section as MAT from its tab.
+3. Open **Traces / CSV**. The **Session playback** bar directly above the plot lets
+   you drag the slider, use the arrow keys / mouse wheel or press Previous / Play /
+   Pause / Next while watching the trace. Speed, UTC/EST and hold/mean controls stay
+   on that page. The first loaded sweep is displayed automatically. Export the
+   spectrogram's selected section as MAT from the spectrogram tab.
 4. Open other CSV files to compare traces. Check the chosen X/Y columns and units;
    the generic reader takes the largest rectangular numeric block. Set X multiplier
    explicitly (e.g. `1000000` for MHz to Hz) and update the axis label. Decoder CSVs
@@ -89,31 +93,56 @@ Use each command's `--help` for all options. Session decoding APIs remain availa
 as `from fieldfox_recording import FieldFoxRecording`; the socket browser API is
 `from fieldfox_browser.client import FieldFoxClient`.
 
-## Build the EXEs
+## Build the single EXE
 
 On 64-bit Windows, install Python 3.11 and run:
 
 ```powershell
 .\build_windows.ps1
 # Or double-click build_windows.bat
-# Optional: .\build_windows.ps1 -Mode onedir
+# Single-file is the default; no mode option is needed.
 ```
 
-The script creates an isolated `.venv-build`, installs the pinned
+The script checks for an isolated 64-bit Python 3.11 `.venv-build`, installs the pinned
 `requirements-build.txt`, and runs `scripts/build_exe.py` with
-`packaging/FieldFoxWorkbench.spec`. It builds both variants, rejects a bundle above
-**300 MiB**, and runs each executable's offline self-test. Outputs:
+`packaging/FieldFoxWorkbench.spec`. An incompatible existing environment is preserved
+and `.venv-build-py311` is used instead. The build rejects Python 3.13, mixed Python
+DLLs, missing Python/VC runtime files, wrong architecture and an EXE above **300 MiB**.
+Outputs:
 
-- `dist/FieldFoxWorkbench/FieldFoxWorkbench.exe` plus `_internal/` (keep together)
-- `dist/FieldFoxWorkbench-windows-x64.zip` (portable release download)
-- `dist/FieldFoxWorkbench-standalone.exe` (one-file alternative)
+- `dist/FieldFoxWorkbench-standalone.exe` (the complete single-file application)
 - `dist/build-report.json` and `dist/SHA256SUMS.txt`
 
-The size check measures the **whole portable folder**, not just its launcher EXE.
+PyInstaller runs with a clean cache and a Python-version-specific work directory.
+The bootloader cookie, Python DLL, VC DLLs and x64 architecture are checked in the
+finished archive. The EXE's offline GUI/export test then runs from an empty working
+directory, with installed Python/virtual environments removed from PATH and a
+temporary path containing spaces and Unicode. This does not replace testing on
+your own Windows installation. Exact runtime hashes and checks appear in
+`build-report.json`. Optional `-Mode onedir` / `-Mode both` remain for diagnostics;
+when used, the size check counts the entire folder, not just its launcher.
+
 Tk/Agg backends are bundled; Qt, notebooks, pandas and vendor programs are excluded.
 Third-party notices are included. Build helpers have a 20-minute timeout and frozen
 checks a 60-second timeout; owned process trees are terminated on timeout. Build on
 the target OS; these scripts do not cross-compile Windows executables on Linux.
+
+### Python DLL startup errors
+
+The published x64 EXE includes `python311.dll`, `vcruntime140.dll` and
+`vcruntime140_1.dll`. A message naming `python313.dll` does not match the audited
+release runtime. Use the current release EXE rather than an older or locally built
+copy. Do not download individual DLLs from third-party sites. If startup still
+fails, record the exact error and path, Windows version and the EXE's SHA-256:
+
+```powershell
+Get-FileHash .\FieldFoxWorkbench-standalone.exe -Algorithm SHA256
+```
+
+Compare with the release's `SHA256SUMS.txt`. A Windows DLL-loader error can refer
+to a missing dependency of the named DLL, even when the named file exists. The
+reported Python 3.13 failure could not be reproduced without the exact affected
+binary/error; the release runtime audit and startup checks are recorded explicitly.
 
 ## Tests and resource limits
 

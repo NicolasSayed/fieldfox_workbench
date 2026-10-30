@@ -207,4 +207,27 @@ def test_source_frozen_diagnostics_entrypoint(tmp_path):
     result = subprocess.run([sys.executable, "-m", "fieldfox_workbench", "--self-test", str(output)], capture_output=True, text=True, timeout=35)
     if "no display name" in result.stderr: pytest.skip("No Tk display")
     assert result.returncode == 0, result.stderr + (output.read_text() if output.exists() else "")
-    data = json.loads(output.read_text()); assert data["ok"] and data["tabs"] == 7
+    data = json.loads(output.read_text()); assert data["ok"] and data["tabs"] == 6
+
+
+def test_playback_bar_on_trace_page_updates_plot_and_keeps_cursor_in_sync(desktop, tmp_path):
+    app, errors, finish = desktop
+    app.open_path(synthetic_session(tmp_path / "session")); finish()
+    assert app.playback.outer.master is app.plots.playback_frame
+    assert "Session playback" not in [app.tabs.tab(tab, "text") for tab in app.tabs.tabs()]
+    app.tabs.select(app.trace_tab)
+    app.playback.slider.set(2); app.root.update()
+    np.testing.assert_array_equal(app.plots.traces[0].y, [-68, -58, -48])
+    assert "sweep 2" in app.playback.status.get() and "EST" in app.playback.status.get()
+    app.playback.move(-1)
+    assert app.playback.index.get() == 1 and app.plots.traces[0].name == "Sweep 1"
+    app.playback.index.set(0); app.playback.show(); app.playback.delay.set("100")
+    app.playback.toggle()
+    assert app.playback.playing and app.playback.play_button.cget("text") == "Pause"
+    assert app.playback.index.get() == 0 and app.plots.traces[0].name == "Sweep 0"
+    deadline = time.monotonic()+2
+    while app.playback.playing and time.monotonic() < deadline:
+        app.root.update(); time.sleep(.01)
+    assert not app.playback.playing and app.playback.index.get() == 2
+    assert app.plots.traces[0].name == "Sweep 2" and app.playback.play_button.cget("text") == "Play"
+    assert not errors

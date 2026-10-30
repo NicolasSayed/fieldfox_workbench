@@ -49,9 +49,9 @@ class Workbench:
         ttk.Button(bar, text="Cancel operation", command=self.cancel).pack(side="right")
         ttk.Label(root, textvariable=self.status, padding=(10, 6), wraplength=1200).pack(side="bottom", fill="x")
         self.tabs = ttk.Notebook(root); self.tabs.pack(fill="both", expand=True, padx=7, pady=(0, 7))
-        self.browser_tab, self.session_tab, self.playback_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab = [ttk.Frame(self.tabs) for _ in range(7)]
-        for frame, title in zip((self.browser_tab, self.session_tab, self.playback_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab),
-                                ("Instrument files", "Session spectrogram", "Session playback", "Traces / CSV", "Screenshots / capture", "SA control / live", "Help")):
+        self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab = [ttk.Frame(self.tabs) for _ in range(6)]
+        for frame, title in zip((self.browser_tab, self.session_tab, self.trace_tab, self.screen_tab, self.live_tab, help_tab),
+                                ("Instrument files", "Session spectrogram", "Traces / CSV", "Screenshots / capture", "SA control / live", "Help")):
             self.tabs.add(frame, text=title)
         self.browser = BrowserApp(root, parent=self.browser_tab, embedded=True, on_download=self.open_path)
         self.viewer = FieldFoxApp(root, parent=self.session_tab, embedded=True, on_loaded=self.session_loaded)
@@ -60,7 +60,7 @@ class Workbench:
         self.viewer._job = lambda work, done, message: self.panel_job(self.viewer, work, done, message)
         self.browser._error = self.viewer._error = self.error
         self.plots = PlotPanel(self, self.trace_tab); self.screen = ScreenPanel(self, self.screen_tab)
-        self.playback = Playback(self, self.playback_tab); self.live = LivePanel(self, self.live_tab)
+        self.playback = Playback(self, self.plots.playback_frame); self.live = LivePanel(self, self.live_tab)
         help_text = tk.Text(help_tab, wrap="word", font=("Segoe UI", 11), padx=22, pady=16)
         help_text.pack(fill="both", expand=True)
         help_text.insert("1.0", HELP); help_text.configure(state="disabled")
@@ -179,7 +179,7 @@ HELP = """FieldFox Workbench
 
 2. Session spectrogram: select an RTAUTOsession folder containing dSTA00000 and dTRC00000 (or supported flat stores). Choose the sweep interval and frequency range, then Load / update plot. Large selections are thinned to the maximum displayed sweeps, not averaged. Export section MAT preserves the displayed data plus instrument, UTC and EST timestamps. Existing files and original session folders are protected.
 
-3. Session playback: browse the selected sweeps, play them at a chosen rate or calculate maximum/minimum hold and a mean in linear power. Playback uses the loaded selection; it does not load the whole recording. Plots appear in Traces / CSV.
+3. Session playback is at the top of Traces / CSV, directly above the plot. Drag the slider, use the arrow keys or mouse wheel, or use Previous / Play / Next to browse selected sweeps while viewing the trace. Playback speed, UTC / EST timestamps and maximum/minimum hold / power mean are on the same page. Playback uses the loaded selection; it does not load the whole recording.
 
 4. Traces / CSV: open a numeric CSV with optional metadata/header rows. Check X/Y columns and units; X multiplier converts units explicitly. The largest rectangular numeric block is selected. Long-form decoder CSVs select one sweep and trace slot. Add compatible overlays, use toolbar zoom/pan, click to place up to eight nearest-point markers, and apply horizontal upper/lower limits. Limits test all imported points, including those outside the zoom. Save a JSON plot preset, CSV/MAT data, PNG/PDF image or PDF report with plots, screenshot, notes and sources.
 

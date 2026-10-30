@@ -25,6 +25,8 @@ class PlotPanel:
         self.scale = tk.StringVar(value="1"); self.sweep = tk.StringVar(); self.slot = tk.StringVar(value="0")
         self.summary = tk.StringVar(value="Open a CSV or capture an SA trace. Click the plot to place markers.")
         outer = ttk.Frame(parent, padding=10); outer.pack(fill="both", expand=True)
+        self.playback_frame = ttk.LabelFrame(outer, text="Session playback", padding=(6, 2))
+        self.playback_frame.pack(fill="x", pady=(0, 6))
         top = ttk.Frame(outer); top.pack(fill="x")
         ttk.Button(top, text="Open CSV…", command=self.open_csv).pack(side="left")
         for label, var, width in [("Decoder sweep (blank=first)", self.sweep, 8), ("Slot", self.slot, 4)]:

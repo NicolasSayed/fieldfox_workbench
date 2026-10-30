@@ -1,4 +1,4 @@
-# Release 0.1.0 validation
+# Release 0.1.1 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -6,9 +6,9 @@ tzdata 2026.6 and PyInstaller 6.22.3.
 
 ## Executed checks
 
-`python -m pytest -q -rs`: **186 passed, 1 skipped**. The skipped integration test
-requires `FIELDFOX_TEST_SESSION`; no real session was available. A subsequent
-focused MAT overlay test also passed after adding exported trace metadata.
+`python -m pytest -q -rs`: **204 passed, 1 skipped**. The skipped integration test
+requires `FIELDFOX_TEST_SESSION`; no real session was available. Playback slider/plot synchronization and rejection of mismatched, missing or mixed
+Python/VC runtimes are included in the suite.
 
 Tests cover GPSA/RTSA version branches, binary headers and record boundaries,
 partition stores, negative/truncated data, RPX indexes/CRC, frequency axes, section
@@ -18,33 +18,36 @@ temporary-file cleanup and changing remote files. New integration checks exercis
 download → recording load → playback, screenshot/CSV capture → viewer, power mean,
 markers/limits, overlay MAT round-trip, report output and a single-worker guard.
 
-Each frozen executable was actually run with `--self-test RESULT_JSON`. Both
-passed creation of all seven Tk tabs, synthetic session decode and TkAgg rendering,
-CSV columns, markers/limits, section MAT round-trip with UTC/EST fields, overlay
-MAT, Pillow image preview, PDF report and playback/maximum hold. No network or
-instrument is used by this diagnostic. Temporary synthetic files are removed.
+The release is a single EXE. Its frozen `--self-test RESULT_JSON` checks creation
+of all six tabs, synthetic session decode and TkAgg rendering, CSV columns,
+markers/limits, section MAT round-trip with UTC/EST fields, overlay MAT, Pillow
+image preview, PDF report and playback/maximum hold. It verifies that playback
+controls are embedded in the trace page and that changing the row updates the plot.
+No network or instrument is used by this diagnostic. Temporary synthetic files
+are removed.
 
-Measured build sizes (rounded; exact bytes and SHA-256 are release assets):
+The build requires 64-bit CPython 3.11, explicitly collects its interpreter and VC
+runtime DLLs and inspects the completed executable's PyInstaller cookie and archive.
+It rejects missing/wrong/mixed Python DLLs and verifies x64 PE headers plus runtime
+hashes. PyInstaller uses a clean cache and version-specific work directory. The
+frozen test is run with installed Python removed from PATH, no Python/venv/Conda
+variables, an empty working directory, and a temporary directory containing spaces
+and Unicode. This is environment isolation on the build PC, not a clean Windows VM.
 
-| Build | Size |
-|---|---:|
-| Complete portable application directory, including runtime | approximately 162 MiB |
-| Portable ZIP download | approximately 70 MiB |
-| Standalone EXE download | approximately 69 MiB |
-| Enforced maximum per complete bundle | 300 MiB |
+The single-file EXE is approximately 70 MiB, below the enforced 300 MiB cap. Exact
+artifact sizes, SHA-256, runtime hashes, Python version and startup-test output
+are in the release's `build-report.json` and `SHA256SUMS.txt`. The one-file launcher
+memory statistic excludes its child application and must not be interpreted as the
+whole app's memory use. Large selected sections and plotting need additional RAM.
 
-The portable executable's measured peak working set during the small synthetic
-self-test was approximately **168 MiB**. This is not a prediction for large data:
-larger selected sections, plot rendering and report generation need additional
-memory. The standalone launcher's memory statistic excludes its child application
-and must not be interpreted as the whole app's memory use. Default display limits,
-explicit caps, one worker and lazy SciPy imports help keep normal use modest.
-
-The first packaging attempt exposed a module-name collision between a source
-launcher and the package. The production spec uses a distinct launcher in
-`packaging/`, and both corrected binaries passed their checks. A failed frozen
-startup is written to JSON in diagnostic mode; bounded build runners terminate
-their owned helper trees on timeout.
+The earlier published 0.1.0 EXE was inspected and contains `python311.dll` plus both
+VC runtime DLLs. It does not select Python 3.13. The reported `python313.dll` error
+could not be reproduced without the exact affected binary/error; do not claim its
+specific cause has been established. The 0.1.1 build records the runtime explicitly
+and prevents reusing a mismatched local build environment. A failed startup after
+Python initializes is written to JSON in diagnostic mode; DLL-loader failures
+before Python starts are caught by the bounded runner and its log/timeout. No
+analysis or build helper is intentionally left running after failure.
 
 ## Evidence limits and next hardware check
 
@@ -62,6 +65,6 @@ identity/catalogue and a completed session download, then test screenshot captur
 and a held SA trace before applying settings. Keep captures and instrument inputs
 outside this source repository.
 
-The portable folder and standalone binary contain the independently authored app
+The standalone binary contains the independently authored app
 and third-party Python libraries. No proprietary Data Link binary, decompiled
 source, actual user recording or derived user data is packaged or published.

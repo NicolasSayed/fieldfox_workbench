@@ -5,6 +5,7 @@ import struct
 import tempfile
 import time
 import traceback
+import sys
 
 
 def synthetic_session(path):
@@ -26,7 +27,7 @@ def synthetic_session(path):
 
 
 def self_test(app, result_path):
-    """Create all seven tabs, load data, render and round-trip MAT, then exit."""
+    """Create all tabs, load data, render and round-trip MAT, then exit."""
     result = {"ok": False}; errors = []
     app.error = errors.append; app.jobs.on_error = errors.append
     try:
@@ -51,7 +52,7 @@ def self_test(app, result_path):
             np.testing.assert_array_equal(data["power_dbm"], section.power_dbm)
             assert "timestamp_utc" in data and "timestamp_est" in data
             csv = base / "synthetic.csv"; csv.write_text("Frequency (Hz),Power (dBm)\n1,-70\n2,-60\n3,-50\n", encoding="utf-8")
-            app.plots.add_trace(table_trace(read_csv(csv)))
+            app.plots.clear(); app.plots.add_trace(table_trace(read_csv(csv)))
             app.plots.marker_x.set("2"); app.plots.add_marker(); app.plots.upper.set("-55"); app.plots.redraw()
             app.plots.canvas.draw(); export_traces(app.plots.traces, base / "trace.mat")
             assert loadmat(base / "trace.mat")["trace_1"].size == 1
@@ -59,13 +60,18 @@ def self_test(app, result_path):
             app.screen.open_image(base / "synthetic-screen.png")
             app.plots.write_report(base / "report.pdf")
             assert (base / "report.pdf").read_bytes().startswith(b"%PDF")
-            app.playback.show(); app.playback.summary("Maximum hold")
+            app.tabs.select(app.trace_tab)
+            assert app.playback.outer.master is app.plots.playback_frame
+            app.playback.move(1)
+            assert app.plots.traces[0].name == "Sweep 1"
+            app.playback.summary("Maximum hold")
             app.root.update()
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT overlays", "Pillow screenshot", "PDF report", "session playback / maximum hold"],
-                      "numpy": np.__version__, "synthetic_data_only": True}
+                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "session playback / maximum hold"],
+                      "numpy": np.__version__, "python_version": sys.version.split()[0],
+                      "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}
     except Exception:
         result["error"] = traceback.format_exc()
     finally:

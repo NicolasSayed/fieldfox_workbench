@@ -20,6 +20,7 @@ remove only its own unique temporary remote file. Protect existing local files.
 
 Run `python -m pytest -q` and the offline `--self-test` after relevant edits.
 Before publishing EXEs, build in the isolated pinned environment with
-`build_windows.ps1`, pass both frozen checks and the 300 MiB size cap. Measure the
-whole portable directory. Document mock/synthetic validation separately from real
+`build_windows.ps1` (onefile by default), pass the runtime audit, isolated frozen
+check and 300 MiB size cap. When a diagnostic onedir build is requested, measure
+the whole directory. Document mock/synthetic validation separately from real
 hardware validation; no instrument was available for the initial release.
