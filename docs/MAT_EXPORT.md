@@ -146,6 +146,26 @@ plot/hold/mean operations. Exclude rows using `~d.zero_filled` (or use
 Missing partition files, unsupported formats, invalid full records, contradictory
 indexes and CRC failures remain errors. Disable recovery for strict verification.
 
+### Overlapping boundaries and extra tail bytes
+
+An error such as `invalid first trace 5500; expected trace 5503 or later` means
+the previous file's physical length extends past the next header's first ID.
+Earlier recovery wrongly required the next ID to be beyond the physical end.
+Recovery now validates the first header before using its sweep ID as the next
+partition boundary (or uses validated RPX logical counts). Bytes beyond that
+boundary in the preceding file are excluded from decoding. The next file supplies
+trace 5500; it is not filled or duplicated. This handles unused tail bytes and
+overlapping trailing records without changing the originals.
+
+`metadata.recovery.ignored_trailing_bytes` reports the total excluded bytes;
+the `partitions` entries identify each source file, its logical record count and
+its excluded byte count. GUI status and export completion also report it.
+Entire repeated partition prefixes are accepted only after a bounded byte-for-byte
+comparison. Backward IDs, conflicting repeated starts, bad state/clock headers
+and incomplete headers used to justify overlaps remain errors. Corruption within
+the retained records is still checked. This is an explicit recovery policy;
+preserve the original files for provenance and use strict mode for verification.
+
 The existing `zero_filled` / `zero_filled_sweeps` names are retained for script
 compatibility; they now mean recovered data regardless of the fill value.
 Missing auxiliary fields and timestamp sentinels remain 0. Original recorded

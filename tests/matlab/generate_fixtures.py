@@ -9,7 +9,7 @@ import struct
 
 from fieldfox_recording import FieldFoxRecording
 from tests.fixtures import make_session, state_bytes, trace_bytes, TICKS
-from tests.test_recovery import short_session, recover, rpx
+from tests.test_recovery import short_session, recover, rpx, overlapping_session
 
 
 def main():
@@ -52,6 +52,16 @@ def main():
             else:
                 trace.write_bytes(b''); options['expected_sweeps']=3
         recover(session,**options).to_mat(root/f'python_{name}',chunk_sweeps=250)
+    for name in ('overlap','padding','indexed_overlap','repeated'):
+        options = {} if name=='overlap' else dict(boundary=5)
+        if name=='padding': options.update(tail='bytes',extra=200)
+        if name=='indexed_overlap': options['indexed']=True
+        session=overlapping_session(root/f'session_{name}',**options)
+        if name=='repeated':
+            second=session/'dTRC00000'/'00000001.TRC'
+            data=second.read_bytes(); second.write_bytes(data[:len(data)//3])
+            second.with_name('00000002.TRC').write_bytes(data)
+        recover(session).to_mat(root/f'python_{name}',chunk_sweeps=5000)
     bad = make_session(root/'session_bad')
     trace = next(bad.glob('dTRC*/*.TRC'))
     content = bytearray(trace.read_bytes()); stride = len(content)//3

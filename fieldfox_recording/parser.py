@@ -260,7 +260,7 @@ class FieldFoxRecording:
         self.trace_files = trace_files
         self.indexes = indexes
         self.cancel_event = None
-        self.recovery = {"enabled": False, "zero_filled_sweeps": 0, "partitions": []}
+        self.recovery = {"enabled": False, "zero_filled_sweeps": 0, "ignored_trailing_bytes": 0, "partitions": []}
         self.partitions = None
 
     def _check_cancel(self):

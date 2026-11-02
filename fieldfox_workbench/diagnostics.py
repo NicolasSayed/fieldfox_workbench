@@ -66,6 +66,14 @@ def self_test(app, result_path):
             recovered = loadmat(base / 'recovered_mat' / 'part_000001.mat')
             assert recovered['zero_filled'][2, 0] and not recovered['timestamp_valid'][2, 0]
             assert (recovered['power_dbm_traces'][2] == -300).all() and recovered['timestamp_ticks'][2, 0] == 0
+            overlap_path = synthetic_session(base / 'SYNTHETIC_OVERLAP_SESSION')
+            overlap_trace = overlap_path / 'dTRC00000' / '00000000.TRC'
+            content = overlap_trace.read_bytes(); stride = len(content)//3
+            overlap_trace.with_name('00000001.TRC').write_bytes(content[-stride:])
+            overlap = FieldFoxRecording.open(overlap_path,recover_incomplete=True)
+            from fieldfox_recording.spectrogram import load_section
+            assert load_section(overlap).power_dbm.shape == (3,3)
+            assert overlap.recovery['ignored_trailing_bytes'] == stride
             csv = base / "synthetic.csv"; csv.write_text("Frequency (Hz),Power (dBm)\n1,-70\n2,-60\n3,-50\n", encoding="utf-8")
             app.browser.open_local_preview(csv)
             deadline = time.monotonic()+5
@@ -97,7 +105,7 @@ def self_test(app, result_path):
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT full session / chunk boundaries", "incomplete TRC -300 dBm fill / missing clocks", "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
+                                 "MAT full session / chunk boundaries", "incomplete TRC -300 dBm fill / missing clocks", "overlapping TRC partition boundary / plot load", "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
                                  "read-only file preview", "Help button / dialog"],
                       "numpy": np.__version__, "python_version": sys.version.split()[0],
                       "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}

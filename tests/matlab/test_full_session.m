@@ -2,12 +2,13 @@ function test_full_session(root)
 % Synthetic cross-language checks; no hardware or proprietary recordings.
 repo = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 addpath(fullfile(repo,'matlab'));
-cases = {'multi','rtsa','old','zero','short_index','short_next','partial','short_explicit','empty','header','deviated'};
+cases = {'multi','rtsa','old','zero','short_index','short_next','partial','short_explicit','empty','header','deviated','overlap','padding','indexed_overlap','repeated'};
 for c = 1:numel(cases)
     name = cases{c}; source = fullfile(root,['session_' name]);
     target = fullfile(root,['native_' name]);
     chunk=2; options={};
     if c>4, chunk=250; end
+    if c>11, chunk=5000; end
     if strcmp(name,'short_explicit'), options={'ExpectedSweeps',500}; end
     if strcmp(name,'empty'), options={'ExpectedSweeps',3}; end
     result = export_fieldfox_session(source,target,'SweepsPerPart',chunk,options{:});
@@ -15,6 +16,7 @@ for c = 1:numel(cases)
     expected = jsondecode(fileread(fullfile(expectedRoot,'manifest.json')));
     actual = jsondecode(fileread(fullfile(target,'manifest.json')));
     assert(actual.complete && numel(actual.parts)==numel(expected.parts));
+    assert(actual.metadata.recovery.ignored_trailing_bytes==expected.metadata.recovery.ignored_trailing_bytes);
     assert(numel(result.parts)==numel(expected.parts));
     for k = 1:numel(actual.parts)
         a = load(fullfile(target,actual.parts(k).file));
@@ -42,7 +44,7 @@ before = dir(root);
 must_fail(@() export_fieldfox_session(fullfile(root,'session_bad'),badTarget,'SweepsPerPart',1));
 assert(~isfolder(badTarget)); after = dir(root);
 assert(isequal({before.name},{after.name}),'Failed export left temporary folders.');
-fprintf('PASS: 11 synthetic sessions; all slots, parts, clocks, axes, v7.3 partial reads, 500/497 recovery, protection and failure cleanup.\n');
+fprintf('PASS: 15 synthetic sessions; all slots, parts, clocks, axes, v7.3 partial reads, 500/497 and 5500/5503 recovery, protection and failure cleanup.\n');
 end
 
 function must_fail(work)

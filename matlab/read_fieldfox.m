@@ -47,9 +47,9 @@ headerBytes = 32 + 12*(s0.version>=4);
 stride = headerBytes + 4*(s0.points*s0.blocks+s0.auxiliary);
 firstIds = [states.first_trace];
 assert(firstIds(1)==0 && all(diff(firstIds)>0),'fieldfox:state','Invalid state transition boundaries.');
-[counts,~,recovery] = fieldfox_trace_layout(sessionFolder,trc,stride,s0.version,o.RecoverIncomplete,o.ExpectedSweeps);
-if o.WarnRecovery && recovery.zero_filled_sweeps>0
-    warning('fieldfox:recovered','Filling missing power in %d sweeps with -300 dBm; see zero_filled flags.',recovery.zero_filled_sweeps);
+[counts,~,recovery] = fieldfox_trace_layout(sessionFolder,trc,stride,s0.version,o.RecoverIncomplete,o.ExpectedSweeps,states);
+if o.WarnRecovery && (recovery.zero_filled_sweeps>0 || recovery.ignored_trailing_bytes>0)
+    warning('fieldfox:recovered','Filling missing power in %d sweeps with -300 dBm; ignoring %d bytes beyond partition boundaries; see recovery metadata.',recovery.zero_filled_sweeps,recovery.ignored_trailing_bytes);
 end
 total = sum(counts); stop = min(o.StopSweep,total);
 validateattributes(o.StartSweep,{'numeric'},{'scalar','integer','nonnegative','finite'});

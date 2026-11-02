@@ -215,6 +215,20 @@ def test_recovered_session_gui_playback_and_full_export(desktop, tmp_path, monke
     np.testing.assert_array_equal(data['power_dbm_traces'][2, 0], [-300, -300, -300])
 
 
+def test_load_update_plot_at_reported_partition_boundary(desktop,tmp_path):
+    from .test_recovery import overlapping_session
+    app,errors,finish=desktop
+    path=overlapping_session(tmp_path/'boundary')
+    app.viewer.path.set(str(path))
+    app.viewer.values['start'].set('5498'); app.viewer.values['stop'].set('5503')
+    app.viewer.load(); finish()
+    assert app.viewer.section.sweep_indices.tolist()==[5498,5499,5500,5501,5502]
+    np.testing.assert_array_equal(app.viewer.section.power_dbm[2],[-20,-21,-22])
+    assert 'ignored' in app.viewer.status.get()
+    app.playback.index.set(2); app.playback.show()
+    assert not errors and app.plots.traces[0].name=='Sweep 5500'
+
+
 def test_one_worker_cancel_and_recording_cancel(desktop, tmp_path):
     from fieldfox_recording import FieldFoxRecording, RecordingError
     app, errors, finish = desktop

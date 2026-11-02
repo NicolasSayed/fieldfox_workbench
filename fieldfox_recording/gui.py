@@ -190,6 +190,8 @@ class FieldFoxApp:
             self.status.set(f"{rec.metadata['application_name']}: {len(rec)} total sweeps. Selected {len(section.sweep_indices)} × {len(section.frequency_hz)} bins, row step {section.effective_step}. Section MAT saves this selection; full-session MAT saves every sweep and trace.")
             if rec.recovery['zero_filled_sweeps']:
                 self.status.set(self.status.get() + f" WARNING: {rec.recovery['zero_filled_sweeps']} sweeps recovered with −300 dBm power placeholders.")
+            if rec.recovery['ignored_trailing_bytes']:
+                self.status.set(self.status.get() + f" Recovery: ignored {rec.recovery['ignored_trailing_bytes']:,} bytes beyond partition boundaries; originals preserved.")
             if self.on_loaded is not None:
                 self.on_loaded(rec, section)
         self._job(work, done, "Reading selected sweeps…")
@@ -277,7 +279,7 @@ class FieldFoxApp:
             return rec.to_mat(target, source_timezone=zone, dst_fold=fold,
                               progress=(lambda done, total: report(f"MAT export: {done:,} / {total:,} sweeps")) if report else None)
         self._job(work, lambda result: self.status.set(
-            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}. Recovered sweeps (−300 dBm fill): {result['metadata']['recovery']['zero_filled_sweeps']}."),
+            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}. Recovered sweeps (−300 dBm fill): {result['metadata']['recovery']['zero_filled_sweeps']}; ignored trailing bytes: {result['metadata']['recovery']['ignored_trailing_bytes']}."),
             "Exporting full session to MATLAB (all sweeps, traces and bins)…")
 
     def export_full(self, kind: str) -> None:

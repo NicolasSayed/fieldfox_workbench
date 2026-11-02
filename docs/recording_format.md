@@ -196,7 +196,12 @@ fill missing TRC power with −300 dBm, retaining available complete float32 val
 reporting the replacements separately; this is a recovery policy, not evidence
 that a placeholder is an instrument measurement. Missing auxiliary values remain
 0. The reader can scan recognized stores without an index, as can the
-vendor fallback (`apf.n`). Missing final physical records cannot always be
+vendor fallback (`apf.n`). Recovery also uses validated next-partition first IDs
+as logical boundaries even if a preceding file has extra physical tail bytes.
+Those bytes are reported as `ignored_trailing_bytes`; identical whole repeated
+prefixes require bounded byte comparison. This boundary choice is a recovery
+policy, not evidence about why an instrument file contains extra bytes.
+Missing final physical records cannot always be
 detected when there is no declared count or checksum. No trace checksum or
 compression is present in the recovered als/alt path.
 

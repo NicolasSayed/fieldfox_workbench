@@ -48,6 +48,79 @@ def recover(path, **options):
         return FieldFoxRecording.open(path,recover_incomplete=True,**options)
 
 
+def overlapping_session(root, *, boundary=5500, extra=3, tail='records', indexed=False):
+    """Next header starts at 5500; physical previous-file length reaches 5503."""
+    path=make_session(root)
+    first=next(path.glob('dTRC*/*.TRC'))
+    body=b''.join(trace_bytes(trace_id=i,ticks=TICKS+i*10_000_000) for i in range(boundary))
+    if tail=='records':
+        body+=b''.join(trace_bytes(trace_id=i,ticks=TICKS+i*10_000_000,
+                                  values=(-99,-98,-97)) for i in range(boundary,boundary+extra))
+    else:
+        body+=bytes(extra)
+    first.write_bytes(body)
+    first.with_name('00000001.TRC').write_bytes(b''.join(trace_bytes(trace_id=i,
+        ticks=TICKS+i*10_000_000,values=(-20,-21,-22)) for i in range(boundary,boundary+3)))
+    if indexed:
+        (path/'TRC.rpx').write_bytes(rpx(total=boundary+3,nominal=boundary))
+    return path
+
+
+def test_reported_5500_expected_5503_boundary(tmp_path):
+    path=overlapping_session(tmp_path/'session')
+    originals={p:p.read_bytes() for p in path.rglob('*') if p.is_file()}
+    rec=recover(path)
+    assert len(rec)==5503 and rec.recovery['zero_filled_sweeps']==0
+    assert rec.recovery['ignored_trailing_bytes']==3*rec.metadata['trace_stride_bytes']
+    rows=list(rec.iter_sweeps(5498,5503))
+    assert [s.trace_id for s in rows]==list(range(5498,5503))
+    np.testing.assert_array_equal(rows[2].power_dbm_traces,[[-20,-21,-22]])
+    assert sum(1 for _ in rec)==5503
+    assert all(p.read_bytes()==b for p,b in originals.items())
+    assert load_section(rec,start_sweep=5498).power_dbm.shape==(5,3)
+    rec.to_mat(tmp_path/'mat',chunk_sweeps=5000)
+    data=loadmat(tmp_path/'mat'/'part_000002.mat')
+    assert data['sweep_indices'][500,0]==5500
+    np.testing.assert_array_equal(data['power_dbm_traces'][500,0],[-20,-21,-22])
+    with pytest.raises(RecordingError,match='expected trace'):
+        list(FieldFoxRecording.open(path))
+
+
+@pytest.mark.parametrize('tail,extra,indexed',[('records',3,False),('records',3,True),
+                                             ('bytes',1,False),('bytes',200,False)])
+def test_unused_tail_bytes_follow_validated_boundaries(tmp_path,tail,extra,indexed):
+    path=overlapping_session(tmp_path/'session',boundary=5,extra=extra,tail=tail,indexed=indexed)
+    rec=recover(path)
+    expected_bytes=extra*rec.metadata['trace_stride_bytes'] if tail=='records' else extra
+    assert rec.recovery['ignored_trailing_bytes']==expected_bytes
+    assert len(rec)==8
+    assert [s.trace_id for s in rec]==list(range(8))
+
+
+@pytest.mark.parametrize('change',['backward','same_start','bad_clock','bad_state','short_header'])
+def test_invalid_next_header_cannot_hide_an_overlap(tmp_path,change):
+    path=overlapping_session(tmp_path/'session',boundary=5)
+    second=path/'dTRC00000'/'00000001.TRC'
+    raw=bytearray(second.read_bytes())
+    if change=='backward': struct.pack_into('<i',raw,4,-1)
+    elif change=='same_start': struct.pack_into('<i',raw,4,0)
+    elif change=='bad_clock': struct.pack_into('<q',raw,8,0)
+    elif change=='bad_state': struct.pack_into('<H',raw,2,99)
+    else: raw=raw[:8]
+    second.write_bytes(raw)
+    with pytest.raises(RecordingError): recover(path)
+
+
+def test_identical_repeated_partition_prefix(tmp_path):
+    path=overlapping_session(tmp_path/'session',boundary=5,extra=0)
+    second=path/'dTRC00000'/'00000001.TRC'
+    data=second.read_bytes(); second.write_bytes(data[:len(data)//3])
+    second.with_name('00000002.TRC').write_bytes(data)
+    rec=recover(path)
+    assert len(rec)==8 and [s.trace_id for s in rec]==list(range(8))
+    assert rec.recovery['ignored_trailing_bytes']==len(data)//3
+
+
 def test_expected_500_read_497(tmp_path):
     session = short_session(tmp_path/'session')
     original = {p:p.read_bytes() for p in session.rglob('*') if p.is_file()}

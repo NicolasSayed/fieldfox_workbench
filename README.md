@@ -138,6 +138,14 @@ with **−300 dBm** power placeholders, and preserves later sweep positions. RPX
 deviations) or the next partition's first sweep ID determine missing tail lengths.
 Nothing is changed in the original recording.
 
+Recovery also handles a file whose byte length extends past the next partition's
+first sweep ID (for example, **first trace 5500; expected 5503**). Validated next-file
+headers establish the boundary; extra bytes in the preceding file are excluded
+and counted in `metadata.recovery.ignored_trailing_bytes`. The next file supplies
+that sweep, so it is not duplicated. A wholly repeated partition prefix must
+match byte-for-byte. GUI status reports excluded tail bytes. Strict decoding
+still rejects inconsistent inputs.
+
 For a short **final** file without an RPX count, the intended total is unknown.
 Set `expectedSweeps` in the short MATLAB script, or **Expected total sweeps** in
 Workbench. This is the total for the entire session, not a per-file limit:

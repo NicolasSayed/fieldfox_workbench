@@ -1,9 +1,10 @@
-function [counts, starts, recovery] = fieldfox_trace_layout(folder, files, stride, version, recover, expected)
+function [counts, starts, recovery] = fieldfox_trace_layout(folder, files, stride, version, recover, expected, states)
 % Infer short partition tails from RPX counts or the next file's first ID.
 % FDAT/fDEV layout: Utility.dll ano/ann.qx and apf.t cases 11/15/5.
 sizes = [files.bytes]; counts = sizes/stride; starts = [0 cumsum(counts(1:end-1))];
 recovery = struct('enabled',logical(recover),'zero_filled_sweeps',0,'partitions',{{}});
 recovery.power_fill_dbm = -300; recovery.auxiliary_fill_value = 0;
+recovery.ignored_trailing_bytes = 0;
 if ~recover
     assert(isempty(expected),'fieldfox:recovery','ExpectedSweeps requires RecoverIncomplete.');
     assert(all(counts>0 & counts==fix(counts)),'fieldfox:truncated','Invalid TRC file length.');
@@ -44,9 +45,26 @@ else
         if k>1, first=starts(k-1)+ceil(sizes(k-1)/stride); end
         if sizes(k)>=8
             [fid,msg] = fopen(files(k).path,'rb'); assert(fid>=0,'fieldfox:io',msg);
-            cleanup = onCleanup(@() fclose(fid)); b = fread(fid,8,'*uint8'); clear cleanup
+            headerBytes = 32+12*(version>=4);
+            cleanup = onCleanup(@() fclose(fid)); b = fread(fid,min(headerBytes,sizes(k)),'*uint8'); clear cleanup
             if version>=5, actual=double(number(b,5,'int32')); else, actual=double(number(b,1,'uint16')); end
-            assert(actual>=first && (k~=1 || actual==0),'fieldfox:link','Invalid first trace ID in partition.');
+            identical=false;
+            if k>1 && actual==starts(k-1)
+                identical=sizes(k-1)<headerBytes || same_prefix(files(k-1).path,files(k).path,sizes(k-1));
+            end
+            assert((k~=1 || actual==0) && (k==1 || actual>starts(k-1) || identical), ...
+                'fieldfox:link','Invalid first trace ID: partition starts must increase.');
+            if numel(b)==headerBytes
+                sid=double(number(b,3,'uint16'));
+                expectedState=find([states.first_trace]<=actual,1,'last')-1;
+                assert(sid<numel(states) && sid==expectedState,'fieldfox:link','Invalid first trace state link.');
+                ticks=number(b,9,'int64'); parameter=number(b,headerBytes-7,'double');
+                maximum=int64(315537897599)*int64(10000000)+int64(9999999);
+                assert(ticks>0 && ticks<=maximum && isfinite(parameter) && parameter>=-2, ...
+                    'fieldfox:header','Invalid first trace header.');
+            else
+                assert(actual>=first,'fieldfox:link','Incomplete first header cannot establish an overlapping boundary.');
+            end
             first = actual;
         end
         starts(k) = first;
@@ -58,17 +76,30 @@ else
     counts = diff([starts last]); source = 'partition first sweep IDs / physical tail / optional ExpectedSweeps';
 end
 assert(sum(counts)>0,'fieldfox:recovery','Empty session: provide ExpectedSweeps.');
-assert(all(sizes<=counts*stride),'fieldfox:index','More physical data than declared partition records.');
 recovery.count_source = source;
 recovery.note = 'Missing power uses -300 dBm placeholders. Missing headers have ticks=0 and blank times. zero_filled is the legacy recovery flag name.';
 for k = 1:numel(files)
-    complete = floor(sizes(k)/stride); missing = counts(k)-complete;
-    if missing>0
+    usable=min(sizes(k),counts(k)*stride);
+    complete = floor(usable/stride); missing = counts(k)-complete;
+    ignored=sizes(k)-usable;
+    if missing>0 || ignored>0
         recovery.zero_filled_sweeps = recovery.zero_filled_sweeps+missing;
+        recovery.ignored_trailing_bytes = recovery.ignored_trailing_bytes+ignored;
         recovery.partitions{end+1} = struct('file',files(k).path,'start_sweep',starts(k), ...
             'expected_sweeps',counts(k),'complete_sweeps',complete, ...
-            'partial_bytes',mod(sizes(k),stride),'zero_filled_sweeps',missing);
+            'partial_bytes',mod(usable,stride),'zero_filled_sweeps',missing,'ignored_trailing_bytes',ignored);
     end
+end
+end
+
+function same = same_prefix(first,second,remaining)
+[left,msg]=fopen(first,'rb'); assert(left>=0,'fieldfox:io',msg); closeLeft=onCleanup(@() fclose(left));
+[right,msg]=fopen(second,'rb'); assert(right>=0,'fieldfox:io',msg); closeRight=onCleanup(@() fclose(right));
+same=true;
+while remaining>0
+    n=min(65536,remaining); a=fread(left,n,'*uint8'); b=fread(right,n,'*uint8');
+    if numel(a)~=n || ~isequal(a,b), same=false; return; end
+    remaining=remaining-n;
 end
 end
 

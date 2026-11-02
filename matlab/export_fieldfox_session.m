@@ -22,8 +22,8 @@ args = {'MaxSweeps',Inf,'SourceTimeZone',o.SourceTimeZone,'DSTFold',o.DSTFold, .
 probe = read_fieldfox(source,'StopSweep',1,args{:});
 metadata = jsondecode(probe.metadata_json); states = probe.states;
 total = metadata.n_sweeps; slots = states(1).blocks; points = states(1).points;
-if metadata.recovery.zero_filled_sweeps>0
-    warning('fieldfox:recovered','Filling missing power in %d sweeps with -300 dBm; timestamps for missing headers stay blank.',metadata.recovery.zero_filled_sweeps);
+if metadata.recovery.zero_filled_sweeps>0 || metadata.recovery.ignored_trailing_bytes>0
+    warning('fieldfox:recovered','Filling missing power in %d sweeps with -300 dBm; ignoring %d bytes beyond partition boundaries; missing times stay blank.',metadata.recovery.zero_filled_sweeps,metadata.recovery.ignored_trailing_bytes);
 end
 starts = [states.first_trace];
 assert(starts(1)==0 && all(diff(starts)>0) && all(starts<total), ...

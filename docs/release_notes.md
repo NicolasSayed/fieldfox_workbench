@@ -1,11 +1,17 @@
-## Use −300 dBm for missing trace power
+## Fix Load / update plot at overlapping TRC boundaries
 
-When an index expects 500 sweeps but a TRC file contains only 497, Workbench and
-the native MATLAB exporter now fill the three missing positions with −300 dBm and
-continue. Complete samples in a torn final sweep are preserved; missing samples
-become −300 dBm for power. Missing auxiliary fields stay 0. Later partitions keep their original sweep IDs. Source files are
-never changed. RPX nominal counts and per-file deviations are honored, so a
-legitimate shorter partition is not automatically padded to a fixed size.
+Fixes `invalid first trace 5500; expected trace 5503 or later` when the previous
+file's byte length extends past the next partition's first sweep ID. Recovery
+now validates the next header and uses that boundary, retaining trace 5500 from
+the next file and reporting excluded bytes in the preceding file. No original
+file is changed. Identical whole repeated prefixes are compared byte-for-byte;
+bad or conflicting headers still fail. MATLAB and Python use the same policy.
+
+Missing power still uses −300 dBm. Complete recorded samples, UTC/EST handling,
+MAT exports, CLI entry points and the existing strict decoding option remain.
+`metadata.recovery.ignored_trailing_bytes` and per-file entries report exclusions;
+the GUI displays them after loading and export. Extra bytes are not silently
+counted as additional sweeps.
 
 **Fill incomplete TRC tails (−300 dBm)** defaults on in Workbench. MATLAB uses
 `'RecoverIncomplete',true`. CLI/API remain strict unless `--recover-incomplete`
@@ -33,8 +39,8 @@ Download **FieldFoxWorkbench-standalone.exe** for the single-file Windows x64
 application, including Python 3.11 and runtime DLLs. Previous Ethernet, screenshot,
 CSV, playback/hold, preview and CLI/API features remain available.
 
-253 tests passed; one real-recording test skipped. MATLAB R2024b batch checks
-passed on eleven synthetic sessions, including 497-of-500 recovery,
+265 tests passed; one real-recording test skipped. MATLAB R2024b batch checks
+passed on fifteen synthetic sessions, including the 5500/5503 case and 497-of-500 recovery,
 and verified cross-language agreement, exact timestamps, partial reads and
 failure cleanup. Source and isolated frozen GUI/export self-tests passed.
 Tests also verify that original recorded zeros remain unchanged. Re-export from

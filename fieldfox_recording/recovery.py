@@ -20,6 +20,18 @@ class TracePartition:
     size: int
 
 
+def _same_prefix(rec, first, second, size):
+    """Allow an identical repeated partition prefix, with bounded comparisons."""
+    with first.open('rb') as left, second.open('rb') as right:
+        while size:
+            rec._check_cancel()
+            block = left.read(min(65536, size))
+            if not block or block != right.read(len(block)):
+                return False
+            size -= len(block)
+    return True
+
+
 def plan(rec, expected_sweeps=None):
     """Use verified RPX counts, next-file IDs, or an explicit final count.
 
@@ -27,6 +39,7 @@ def plan(rec, expected_sweeps=None):
     Utility.dll apf.t, cases 11/15/5. No fixed 500-record assumption is made.
     """
     stride = trace_record_size(rec.states[0])
+    header_bytes = stride-4*rec.states[0].value_count
     first_ids = rec.state_first_ids
     if first_ids[0] != 0 or any(b <= a for a, b in zip(first_ids, first_ids[1:])):
         raise RecordingError("Invalid state transition boundaries")
@@ -70,11 +83,24 @@ def plan(rec, expected_sweeps=None):
             start = 0 if number == 0 else starts[-1] + (sizes[number-1]+stride-1)//stride
             if size >= 8:
                 with path.open('rb') as stream:
-                    prefix = stream.read(8)
+                    prefix = stream.read(min(header_bytes, size))
                 actual = struct.unpack_from('<i' if rec.states[0].version >= 5 else '<H', prefix,
                                             4 if rec.states[0].version >= 5 else 0)[0]
-                if (number == 0 and actual != 0) or actual < start:
-                    raise RecordingError(f"{path}: invalid first trace {actual}; expected trace {start} or later")
+                repeated = number and actual == starts[-1]
+                identical = repeated and (sizes[number-1] < header_bytes or
+                    _same_prefix(rec, rec.trace_files[number-1], path, sizes[number-1]))
+                if ((number == 0 and actual != 0) or (number and
+                        (actual < starts[-1] or (repeated and not identical)))):
+                    raise RecordingError(f"{path}: invalid first trace {actual}; expected trace 0 initially and increasing partition starts")
+                if len(prefix) == header_bytes:
+                    sid = struct.unpack_from('<H', prefix, 2)[0]
+                    if sid >= len(rec.states) or sid != bisect_right(first_ids, actual)-1:
+                        raise RecordingError(f"{path}: invalid first trace state link")
+                    # Validate the header before using its ID as a boundary.
+                    # Padding here is only for parsing the header; no data is exported.
+                    parse_trace(prefix + bytes(stride-header_bytes), rec.states[sid])
+                elif actual < start:
+                    raise RecordingError(f"{path}: incomplete first header cannot establish an overlapping boundary")
                 start = actual
             starts.append(start)
         end = starts[-1] + (sizes[-1]+stride-1)//stride
@@ -87,23 +113,25 @@ def plan(rec, expected_sweeps=None):
     partitions = []
     details = []
     for path, start, count, size in zip(rec.trace_files, starts, counts, sizes):
-        if size > count*stride:
-            raise RecordingError(f"{path}: more physical data than declared partition records")
         partitions.append(TracePartition(path, start, count, size))
-        full, partial = divmod(size, stride)
-        if full < count:
+        usable = min(size, count*stride)
+        full, partial = divmod(usable, stride)
+        ignored = size-usable
+        if full < count or ignored:
             details.append(dict(file=str(path), start_sweep=start, expected_sweeps=count,
                                 complete_sweeps=full, partial_bytes=partial,
-                                zero_filled_sweeps=count-full))
+                                zero_filled_sweeps=count-full, ignored_trailing_bytes=ignored))
     total = sum(counts)
     if not total:
         raise RecordingError("Cannot infer the size of an empty TRC session; provide expected_sweeps")
     report = dict(enabled=True, count_source=source, zero_filled_sweeps=sum(
         d['zero_filled_sweeps'] for d in details), partitions=details,
+        ignored_trailing_bytes=sum(d['ignored_trailing_bytes'] for d in details),
         power_fill_dbm=MISSING_POWER_DBM, auxiliary_fill_value=0,
         note='Missing power uses -300 dBm placeholders. Missing headers have ticks=0 and blank times. zero_filled is the legacy recovery flag name.')
     if details:
         warnings.warn(f"Recovering {report['zero_filled_sweeps']} incomplete/missing sweeps with -300 dBm power; "
+                      f"ignoring {report['ignored_trailing_bytes']} trailing bytes beyond validated partition boundaries; "
                       "see metadata.recovery and zero_filled flags", RuntimeWarning, stacklevel=3)
     return partitions, report
 
