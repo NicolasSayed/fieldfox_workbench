@@ -87,5 +87,51 @@ def test_gui_load_plot_and_exports_use_same_selection(tmp_path,monkeypatch):
         app.values['start'].set('0')
         assert not app._ready()
         assert 'Load / update plot' in str(errors[-1])
+        errors.clear()
+        # Full-session export ignores unapplied/invalid plot controls and also
+        # works before any section has been loaded.
+        app.values['max'].set('not a number'); app.section = None
+        monkeypatch.setattr(filedialog,'askdirectory',lambda **_:str(tmp_path))
+        app.export_session_mat();finish()
+        full = tmp_path/'RTAUTOsession07_MAT'/'part_000001.mat'
+        assert io.loadmat(full)['power_dbm_traces'].shape == (3,1,3)
+        app.export_session_mat();finish()
+        assert (tmp_path/'RTAUTOsession07_MAT_2'/'manifest.json').exists()
     finally:
         app.close()
+
+
+def test_standalone_close_waits_for_mat_cleanup(tmp_path, monkeypatch):
+    import threading
+    from fieldfox_recording import FieldFoxRecording
+    from fieldfox_recording.gui import FieldFoxApp
+    tk = pytest.importorskip('tkinter')
+    try:
+        root = tk.Tk(); root.withdraw()
+    except tk.TclError as error:
+        pytest.skip(f'Tk display unavailable: {error}')
+    app = FieldFoxApp(root); errors = []; started = threading.Event()
+    monkeypatch.setattr(app, '_error', errors.append)
+    target = tmp_path/'cancelled'
+    def work():
+        rec = FieldFoxRecording.open(make_session(tmp_path/'session'), cancel_event=app.cancel_event)
+        def pause(*_):
+            started.set()
+            assert app.cancel_event.wait(10), 'Close did not cancel the owned worker'
+        return rec.to_mat(target, chunk_sweeps=1, progress=pause)
+    app._job(work, lambda _: None, 'Exporting')
+    try:
+        assert started.wait(10)
+        app.close()
+        deadline = time.monotonic()+10
+        while app.busy and time.monotonic()<deadline:
+            root.update(); time.sleep(.01)
+        assert not app.busy and not errors
+        app.worker.join(timeout=1)
+        assert not app.worker.is_alive()
+        assert not target.exists() and not list(tmp_path.glob('.fieldfox-mat-*'))
+    finally:
+        if app.busy:
+            app.cancel_event.set(); app.worker.join(timeout=10)
+        try: root.destroy()
+        except tk.TclError: pass

@@ -426,6 +426,11 @@ class FieldFoxRecording:
         from .export import to_npz
         to_npz(self, path)
 
+    def to_mat(self, path: str | Path, **options) -> dict:
+        """Export the entire session to a new folder of bounded MAT parts."""
+        from .matlab import save_session_mat
+        return save_session_mat(self, path, **options)
+
 
 def inspect_path(path: str | Path) -> dict[str, Any]:
     """Inspect recognized states or unknown prefixes without guessing a decoder."""

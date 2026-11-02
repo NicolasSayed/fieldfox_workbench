@@ -51,6 +51,11 @@ def self_test(app, result_path):
             data = loadmat(base / "section.mat")
             np.testing.assert_array_equal(data["power_dbm"], section.power_dbm)
             assert "timestamp_utc" in data and "timestamp_est" in data
+            manifest = app.viewer.rec.to_mat(base / "full_mat", chunk_sweeps=2)
+            parts = [loadmat(base / "full_mat" / part["file"]) for part in manifest["parts"]]
+            np.testing.assert_array_equal(np.concatenate([part["power_dbm_traces"][:, 0, :] for part in parts]), section.power_dbm)
+            assert len(parts) == 2 and parts[1]["elapsed_s"][0, 0] == 2
+            assert parts[0]["timestamp_ticks"].dtype == np.dtype("int64")
             csv = base / "synthetic.csv"; csv.write_text("Frequency (Hz),Power (dBm)\n1,-70\n2,-60\n3,-50\n", encoding="utf-8")
             app.browser.open_local_preview(csv)
             deadline = time.monotonic()+5
@@ -82,7 +87,7 @@ def self_test(app, result_path):
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
+                                 "MAT full session / chunk boundaries", "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
                                  "read-only file preview", "Help button / dialog"],
                       "numpy": np.__version__, "python_version": sys.version.split()[0],
                       "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}

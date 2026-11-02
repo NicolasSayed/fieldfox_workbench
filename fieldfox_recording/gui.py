@@ -42,7 +42,9 @@ class FieldFoxApp:
         from tkinter import ttk
         self.root = root
         self.on_loaded = on_loaded
-        self.cancel_event = None
+        self.cancel_event = threading.Event()
+        self.closing = False
+        self.worker = None
         self.rec = self.section = self.canvas = self.toolbar = self.figure = None
         self.loaded_options = None
         self.busy = False
@@ -87,10 +89,14 @@ class FieldFoxApp:
         self.fold = tk.StringVar(value="Ask if ambiguous")
         ttk.Combobox(controls, textvariable=self.fold, values=["Ask if ambiguous", "Earlier occurrence", "Later occurrence"], state="readonly", width=25).grid(row=row+5, column=0, sticky="ew", pady=(4, 6))
         buttons = ttk.Frame(outer); buttons.pack(side="bottom", fill="x", pady=(10, 5), before=content)
-        for label, command in [("Export section .mat", self.export_mat), ("Save plot image", self.save_image),
-                               ("Export full session CSV", lambda: self.export_full("csv")),
-                               ("Export full session NPZ", lambda: self.export_full("npz"))]:
-            ttk.Button(buttons, text=label, command=command).pack(side="left", padx=(0, 7))
+        for row, commands in enumerate([
+            [("Export section .mat", self.export_mat), ("Save plot image", self.save_image)],
+            [("Export full session MAT", self.export_session_mat),
+             ("Export full session CSV", lambda: self.export_full("csv")),
+             ("Export full session NPZ", lambda: self.export_full("npz"))],
+        ]):
+            for column, (label, command) in enumerate(commands):
+                ttk.Button(buttons, text=label, command=command).grid(row=row, column=column, sticky="ew", padx=(0, 7), pady=3)
         ttk.Label(outer, textvariable=self.status, wraplength=1120).pack(side="bottom", fill="x", before=buttons)
         root.after(100, self._poll)
         if not embedded:
@@ -120,16 +126,18 @@ class FieldFoxApp:
         messagebox.showerror("FieldFox viewer", str(error), parent=self.root)
 
     def _job(self, work: Callable, done: Callable, message: str) -> None:
-        if self.busy:
+        if self.busy or self.closing:
             self.status.set("Please wait for the current read or export to finish.")
             return
         self.busy = True; self.status.set(message)
+        self.cancel_event.clear()
         def worker():
             try:
                 self.results.put((done, work(), None))
             except Exception as error:
                 self.results.put((done, None, error))
-        threading.Thread(target=worker, daemon=True).start()
+        self.worker = threading.Thread(target=worker, name="FieldFox-viewer-operation", daemon=True)
+        self.worker.start()
 
     def _poll(self) -> None:
         try:
@@ -138,6 +146,8 @@ class FieldFoxApp:
             pass
         else:
             self.busy = False
+            if self.closing:
+                self.close(); return
             try:
                 if error is not None:
                     raise error
@@ -165,7 +175,7 @@ class FieldFoxApp:
             self._embed(figure)
             self.rec, self.section = rec, section
             self.loaded_options = (path, selection, colors)
-            self.status.set(f"{rec.metadata['application_name']}: {len(rec)} total sweeps. Selected {len(section.sweep_indices)} × {len(section.frequency_hz)} bins, row step {section.effective_step}. MAT export saves this selection.")
+            self.status.set(f"{rec.metadata['application_name']}: {len(rec)} total sweeps. Selected {len(section.sweep_indices)} × {len(section.frequency_hz)} bins, row step {section.effective_step}. Section MAT saves this selection; full-session MAT saves every sweep and trace.")
             if self.on_loaded is not None:
                 self.on_loaded(rec, section)
         self._job(work, done, "Reading selected sweeps…")
@@ -225,6 +235,33 @@ class FieldFoxApp:
         except Exception as error:
             self._error(error)
 
+    def export_session_mat(self) -> None:
+        """Export directly from the session path, independent of plot selection."""
+        from tkinter import filedialog
+        if self.busy:
+            self.status.set("Please wait for the current read or export to finish."); return
+        path = self.path.get().strip()
+        if not path:
+            self._error(RecordingError("Select a complete recording session folder.")); return
+        parent = filedialog.askdirectory(title="Choose parent folder for full-session MAT export", parent=self.root)
+        if not parent: return
+        name = Path(path).name + "_MAT"
+        target = Path(parent) / name
+        suffix = 2
+        while target.exists():
+            target = Path(parent) / f"{name}_{suffix}"
+            suffix += 1
+        zone = self.timezone.get().strip() or None
+        fold = {"Ask if ambiguous": None, "Earlier occurrence": 0, "Later occurrence": 1}[self.fold.get()]
+        report = getattr(self, "report_progress", None)
+        def work():
+            rec = FieldFoxRecording.open(path, cancel_event=self.cancel_event)
+            return rec.to_mat(target, source_timezone=zone, dst_fold=fold,
+                              progress=(lambda done, total: report(f"MAT export: {done:,} / {total:,} sweeps")) if report else None)
+        self._job(work, lambda result: self.status.set(
+            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}."),
+            "Exporting full session to MATLAB (all sweeps, traces and bins)…")
+
     def export_full(self, kind: str) -> None:
         from tkinter import filedialog
         if not self._ready(): return
@@ -234,6 +271,13 @@ class FieldFoxApp:
                       lambda _: self.status.set(f"Exported full session to {target}. CSV/NPZ retain the original instrument clock."), "Exporting full session…")
 
     def close(self) -> None:
+        self.closing = True
+        self.cancel_event.set()
+        if self.busy:
+            self.status.set("Cancelling; waiting for the current part to finish…")
+            return
+        if self.worker is not None and self.worker.is_alive():
+            self.root.after(50, self.close); return
         if self.figure is not None:
             import matplotlib.pyplot as plt
             plt.close(self.figure)

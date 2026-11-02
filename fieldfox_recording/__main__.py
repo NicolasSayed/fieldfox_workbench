@@ -15,8 +15,12 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("path")
     export = sub.add_parser("export", help="Export a complete GPSA/RTSA trace session")
     export.add_argument("path")
-    export.add_argument("--format", choices=["csv", "npz"], required=True)
+    export.add_argument("--format", choices=["csv", "npz", "mat"], required=True)
     export.add_argument("--output", required=True)
+    export.add_argument("--chunk-sweeps", type=int, default=5000, help="MAT: maximum sweeps per part")
+    export.add_argument("--max-part-mib", type=float, default=128, help="MAT: array payload budget per part")
+    export.add_argument("--source-timezone", default="EST", help="MAT: instrument clock zone (default fixed EST)")
+    export.add_argument("--dst-fold", type=int, choices=[0, 1], help="MAT: ambiguous DST hour, earlier/later")
     plot = sub.add_parser("plot", help="View a selected recording section as a Matplotlib waterfall")
     from .spectrogram import add_arguments, run
     add_arguments(plot)
@@ -32,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, allow_nan=False))
             return 0 if result["supported"] else 2
         rec = FieldFoxRecording.open(args.path)
-        getattr(rec, f"to_{args.format}")(args.output)
+        if args.format == "mat":
+            rec.to_mat(args.output, chunk_sweeps=args.chunk_sweeps, max_part_mib=args.max_part_mib,
+                       source_timezone=args.source_timezone, dst_fold=args.dst_fold)
+        else:
+            getattr(rec, f"to_{args.format}")(args.output)
         print(f"Exported {len(rec)} sweeps, {rec.states[0].points} points, {rec.states[0].trace_count} trace(s) to {args.output}")
         return 0
     except (RecordingError, OSError, ValueError) as error:

@@ -1,4 +1,4 @@
-# Release 0.1.4 validation
+# Release 0.1.5 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -6,9 +6,33 @@ tzdata 2026.6 and PyInstaller 6.22.3.
 
 ## Executed checks
 
-`python -m pytest -q -rs`: **225 passed, 1 skipped**. The skipped integration test
+`python -m pytest -q`: **235 passed, 1 skipped**. The skipped integration test
 requires `FIELDFOX_TEST_SESSION`; no real session was available. Playback slider/plot synchronization and rejection of mismatched, missing or mixed
 Python/VC runtimes are included in the suite.
+
+## Whole-session MAT export
+
+The full-session exporter was checked across partitioned/flat stores, old GPSA,
+RTSA, multiple stored trace slots, state/axis changes, zero span, exact int64
+ticks, UTC/fixed-EST strings, continuous elapsed times, budgets forcing one-row
+parts, late corrupted records, cancellation and protected destinations. The GUI
+test exports all original rows/bins even with an unloaded section and invalid
+unapplied plot controls, then confirms a second export chooses a new folder.
+Closing the standalone viewer during export cancels its owned worker and waits
+for compression and temporary-folder cleanup before destroying the window.
+
+Native MATLAB R2024b Update 3 was actually run in batch against four independently
+generated sessions: two-slot/partitioned GPSA with an axis change, GPSA v1 flat
+stores, RTSA v18 and GPSA zero span. Native v7.3 and Python MAT parts agree on all
+power values, auxiliary values, masks/state IDs, indices, axes, exact ticks,
+UTC/EST strings and global elapsed times. MATLAB `matfile` partial reads passed.
+Existing-output protection and cleanup after corruption in a later part passed.
+These checks used synthetic data, not supplied real recordings. Reproduction:
+[MAT export guide](MAT_EXPORT.md#reproduce-cross-language-validation).
+
+The native MATLAB reader does not validate RPX CRCs; the Python reader does.
+Default part budgets bound array payloads, not total process memory; temporary
+compression buffers, strings and MATLAB/SciPy working copies add memory.
 
 File-preview checks cover UTF-8, UTF-16/32 BOMs, Windows-1252, incomplete UTF-8 at
 the prefix boundary, empty files, binary hex output, bounded local reads,

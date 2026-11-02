@@ -29,7 +29,7 @@ to copy beside it. Unsigned builds may trigger Windows reputation prompts.
 | Analysis | Nearest-point markers, horizontal upper/lower limits with pass/fail counts, log X, axis ranges and JSON plot presets |
 | Capture | Instrument screenshot PNG, formatted trace CSV, local image preview and unchanged image copies |
 | SA operation | Current trace capture using actual X values and reported units, optional live polling, center/span/RBW, Hold/Run/Single |
-| Export | Selected spectrogram MAT with UTC/EST, full-session CSV/NPZ, overlay CSV/MAT, PNG/PDF figures, multipage PDF report with notes, sources, plots and screenshot |
+| Export | Selected spectrogram MAT, full-session MAT/CSV/NPZ, UTC/EST times, native MATLAB session exporter, overlay CSV/MAT, PNG/PDF figures and reports |
 | Packaging | One-file PyInstaller build, bundled Python/VC runtime audit, 300 MiB size gate and isolated frozen-app self-test |
 
 This covers the common data retrieval and analysis workflows. It is **not a full
@@ -53,7 +53,8 @@ features are tested against a loopback simulator, not claimed hardware-validated
    you drag the slider, use the arrow keys / mouse wheel or press Previous / Play /
    Pause / Next while watching the trace. Speed, UTC/EST and hold/mean controls stay
    on that page. The first loaded sweep is displayed automatically. Export the
-   spectrogram's selected section as MAT from the spectrogram tab.
+   spectrogram's selected section as MAT from the spectrogram tab, or use
+   **Export full session MAT** for every sweep, trace slot and frequency bin.
 4. Open other CSV files to compare traces. Check the chosen X/Y columns and units;
    the generic reader takes the largest rectangular numeric block. Set X multiplier
    explicitly (e.g. `1000000` for MHz to Hz) and update the axis label. Decoder CSVs
@@ -85,10 +86,48 @@ instrument's handling of an interrupted large transfer still needs hardware
 validation. Use Download for the complete file.
 
 The source clock defaults to **EST, fixed UTC−05:00 all year**. Recording ticks have
-no embedded time zone. MAT section exports include `timestamp_instrument`,
+no embedded time zone. MAT section and full-session exports include `timestamp_instrument`,
 `timestamp_utc`, `timestamp_est`, DST-aware `timestamp_eastern`, original int64
 ticks and converted UTC ticks. Use `America/New_York` only for an instrument clock
 that follows daylight saving time; repeated times require a fold selection.
+
+### Export a whole session to MATLAB
+
+For the simplest MATLAB-only workflow, open
+[`matlab/export_whole_session.m`](matlab/export_whole_session.m), edit
+`sessionFolder` and `outputFolder`, and press **Run**. Keep the four `.m` files
+from `matlab/` together. Python and Data Link are not required.
+
+```matlab
+addpath('E:\Git_Files\ffdatalink\work\fieldfox_workbench\matlab');
+export_fieldfox_session('D:\data\RTAUTOsession01', ...
+    'D:\exports\RTAUTOsession01_MAT', 'SweepsPerPart', 5000);
+```
+
+In Workbench, select the original session folder and click **Export full session
+MAT** on **Session spectrogram**. Choose an output parent folder. The app creates
+`<session>_MAT` (or `_MAT_2`, etc. if occupied). A plot need not be loaded. Plot
+sweep limits, thinning, trace-slot selection and frequency cropping do **not**
+restrict this export.
+
+Both exporters save numbered `part_000001.mat` files plus `manifest.json` in a
+new folder outside the source session. Every sweep, stored trace slot and bin is
+retained. Parts stop at settings changes, 5000 sweeps or a 128 MiB array payload
+budget; working memory can exceed that budget. Parts are never averaged or
+thinned. Power dimensions are **sweep × trace slot × point**. UTC and fixed-EST
+times and exact int64 ticks are saved. Existing outputs are protected; failed
+exports do not publish an incomplete output folder.
+
+```matlab
+d = load('D:\exports\RTAUTOsession01_MAT\part_000001.mat');
+p = reshape(d.power_dbm_traces(:,1,:), numel(d.sweep_indices), []);
+imagesc(d.frequency_hz/1e6, d.elapsed_s, p); axis xy; colorbar;
+xlabel('Frequency (MHz)'); ylabel('Elapsed time (s)');
+disp(d.timestamp_utc(1)); disp(d.timestamp_est(1));
+```
+
+See [full-session MAT format and usage](docs/MAT_EXPORT.md) for partial reads,
+zero-span axes, multi-part processing and native MATLAB validation limits.
 
 ### Running max hold / min hold
 
@@ -133,6 +172,7 @@ python -m fieldfox_workbench "D:\recordings\RTAUTOsession01"
 python -m fieldfox_recording inspect "D:\recordings\RTAUTOsession01"
 python -m fieldfox_recording plot "D:\recordings\RTAUTOsession01" --start-sweep 0 --stop-sweep 500 --export-mat section.mat --source-timezone EST
 python -m fieldfox_recording export "D:\recordings\RTAUTOsession01" --format csv --output session.csv
+python -m fieldfox_recording export "D:\recordings\RTAUTOsession01" --format mat --output "D:\exports\session_MAT" --chunk-sweeps 5000 --source-timezone EST
 python -m fieldfox_browser ls 192.168.1.100 '[INTERNAL]:\' --json
 python -m fieldfox_browser download 192.168.1.100 '[INTERNAL]:\RTAUTOsession01' --recursive --output local-session
 ```
@@ -213,7 +253,8 @@ capped at 20 million cells and defaults to 2000 sweeps. CSV imports are capped a
 128 MiB, one million rows, 128 columns and four million numeric cells. Overlays are
 capped at 16 traces / two million points. Image preview is capped at 32 MiB / 16
 million pixels; file text previews read at most 256 KiB. Full CSV exports stream;
-NPZ uses disk-backed power arrays but
+MAT uses bounded in-memory parts; its default 128 MiB array payload budget is
+not a process-memory ceiling. NPZ uses disk-backed power arrays but
 retains per-sweep metadata in RAM. Cancellation is checked between records/socket
 reads; final compression, rendering and cleanup finish before shutdown. No jobs
 remain when the app exits. Preferences/recent paths are saved only in

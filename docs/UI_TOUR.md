@@ -18,6 +18,9 @@ Select sweeps, frequency limits and color settings in the scrollable sidebar.
 The plot supports zoom and pan. **Export section .mat** saves the displayed
 selection, including UTC and EST timestamps; EST means fixed UTC−05:00.
 The load action stays above the plot and the export buttons stay below it.
+In v0.1.5, **Export full session MAT** also saves every sweep, stored trace and
+bin into numbered parts; it ignores plot selection controls. See the
+[MAT export guide](MAT_EXPORT.md). The screenshot below shows the earlier v0.1.4 layout.
 
 ![Session spectrogram with sweep controls and the visible MAT, image, CSV and NPZ export buttons](screenshots/session-spectrogram.jpg)
 
