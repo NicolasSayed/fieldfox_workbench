@@ -7,6 +7,18 @@ if nargin<3, dstFold=[]; end
 assert(isempty(dstFold) || isequal(dstFold,0) || isequal(dstFold,1), ...
     'fieldfox:timezone','DSTFold must be empty, 0 or 1.');
 ticks = int64(ticks(:)); unit = int64(10000000);
+if any(ticks==0)
+    valid = ticks~=0; data=fieldfox_times(ticks(valid),sourceTimeZone,dstFold);
+    names={'timestamp_instrument','timestamp_utc','timestamp_est','timestamp_eastern'};
+    for k=1:numel(names)
+        expanded=repmat({''},numel(ticks),1); expanded(valid)=data.(names{k}); data.(names{k})=expanded;
+    end
+    if ~isempty(sourceTimeZone)
+        expanded=zeros(numel(ticks),1,'int64'); expanded(valid)=data.timestamp_ticks_utc; data.timestamp_ticks_utc=expanded;
+    end
+    data.timestamp_valid=valid; return
+end
+data.timestamp_valid = ticks>0;
 whole = idivide(ticks,unit,'floor'); fractions = rem(ticks,unit);
 wall = datetime(1,1,1)+seconds(double(whole));
 wall.Format = 'yyyy-MM-dd''T''HH:mm:ss';

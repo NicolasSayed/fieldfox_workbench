@@ -1,4 +1,4 @@
-# Release 0.1.5 validation
+# Release 0.1.6 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -6,7 +6,7 @@ tzdata 2026.6 and PyInstaller 6.22.3.
 
 ## Executed checks
 
-`python -m pytest -q`: **235 passed, 1 skipped**. The skipped integration test
+`python -m pytest -q`: **253 passed, 1 skipped**. The skipped integration test
 requires `FIELDFOX_TEST_SESSION`; no real session was available. Playback slider/plot synchronization and rejection of mismatched, missing or mixed
 Python/VC runtimes are included in the suite.
 
@@ -21,16 +21,26 @@ unapplied plot controls, then confirms a second export chooses a new folder.
 Closing the standalone viewer during export cancels its owned worker and waits
 for compression and temporary-folder cleanup before destroying the window.
 
-Native MATLAB R2024b Update 3 was actually run in batch against four independently
+Native MATLAB R2024b Update 3 was actually run in batch against eleven independently
 generated sessions: two-slot/partitioned GPSA with an axis change, GPSA v1 flat
-stores, RTSA v18 and GPSA zero span. Native v7.3 and Python MAT parts agree on all
+stores, RTSA v18, GPSA zero span, 497-of-500 indexed records, an unindexed gap
+before sweep 500 in the next file, an explicit final count, torn float32 values,
+a torn header, an empty TRC file and RPX per-file deviations. Native v7.3 and Python MAT parts agree on all
 power values, auxiliary values, masks/state IDs, indices, axes, exact ticks,
 UTC/EST strings and global elapsed times. MATLAB `matfile` partial reads passed.
 Existing-output protection and cleanup after corruption in a later part passed.
 These checks used synthetic data, not supplied real recordings. Reproduction:
 [MAT export guide](MAT_EXPORT.md#reproduce-cross-language-validation).
 
-The native MATLAB reader does not validate RPX CRCs; the Python reader does.
+Both recovery implementations validate present RPX CRCs and TRC counts; strict
+native MATLAB mode scans physical records without validating indexes. Python
+validates indexes in both modes. Recovery retains complete samples, zero-fills
+missing tails and records the replacements in metadata/arrays. Missing times
+remain blank, ticks are 0 and elapsed seconds are NaN. The GUI test loads a torn
+header, plots by sweep index, plays the placeholder with an explicit label and
+exports the recovered data to MAT. Original files remain unchanged. CLI/API
+strict defaults still reject truncation and mismatches. Two expected recovery
+warnings in the suite report the synthetic GUI load and export.
 Default part budgets bound array payloads, not total process memory; temporary
 compression buffers, strings and MATLAB/SciPy working copies add memory.
 

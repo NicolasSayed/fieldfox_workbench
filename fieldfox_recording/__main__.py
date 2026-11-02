@@ -21,6 +21,9 @@ def main(argv: list[str] | None = None) -> int:
     export.add_argument("--max-part-mib", type=float, default=128, help="MAT: array payload budget per part")
     export.add_argument("--source-timezone", default="EST", help="MAT: instrument clock zone (default fixed EST)")
     export.add_argument("--dst-fold", type=int, choices=[0, 1], help="MAT: ambiguous DST hour, earlier/later")
+    for command in (inspect, export):
+        command.add_argument("--recover-incomplete", action="store_true", help="Zero-fill short TRC tails")
+        command.add_argument("--expected-sweeps", type=int, help="Recovery: explicit final count when no RPX declares it")
     plot = sub.add_parser("plot", help="View a selected recording section as a Matplotlib waterfall")
     from .spectrogram import add_arguments, run
     add_arguments(plot)
@@ -32,10 +35,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "plot":
             return run(args)
         if args.command == "inspect":
-            result = inspect_path(args.path)
+            result = inspect_path(args.path, recover_incomplete=args.recover_incomplete, expected_sweeps=args.expected_sweeps)
             print(json.dumps(result, indent=2, allow_nan=False))
             return 0 if result["supported"] else 2
-        rec = FieldFoxRecording.open(args.path)
+        rec = FieldFoxRecording.open(args.path, recover_incomplete=args.recover_incomplete, expected_sweeps=args.expected_sweeps)
         if args.format == "mat":
             rec.to_mat(args.output, chunk_sweeps=args.chunk_sweeps, max_part_mib=args.max_part_mib,
                        source_timezone=args.source_timezone, dst_fold=args.dst_fold)

@@ -50,7 +50,7 @@ def _iso(value: datetime, fraction: int) -> str:
 
 
 def convert_timestamps(ticks: np.ndarray, source_timezone: str | None = None,
-                       dst_fold: int | None = None) -> dict:
+                       dst_fold: int | None = None, *, allow_missing: bool = False) -> dict:
     """Preserve ticks and export exact ISO times under an explicit clock assumption.
 
     Without a source zone, converted strings are empty, never guessed. EST is
@@ -59,8 +59,21 @@ def convert_timestamps(ticks: np.ndarray, source_timezone: str | None = None,
     if dst_fold not in (None, 0, 1):
         raise RecordingError("dst_fold must be 0 or 1")
     raw = np.asarray(ticks, dtype=np.int64)
+    if allow_missing and np.any(raw == 0):
+        valid = raw != 0
+        result = convert_timestamps(raw[valid], source_timezone, dst_fold)
+        for key in ('timestamp_instrument', 'timestamp_utc', 'timestamp_est', 'timestamp_eastern'):
+            expanded = np.full(len(raw), '', dtype='U40')
+            expanded[valid] = result[key]
+            result[key] = expanded
+        if source_timezone is not None:
+            expanded = np.zeros(len(raw), dtype=np.int64)
+            expanded[valid] = result['timestamp_ticks_utc']
+            result['timestamp_ticks_utc'] = expanded
+        result['timestamp_valid'] = valid
+        return result
     instrument = np.array([ticks_to_iso(int(t)) for t in raw])
-    result = {"timestamp_instrument": instrument,
+    result = {"timestamp_instrument": instrument, "timestamp_valid": raw > 0,
               "source_timezone": source_timezone or "unspecified",
               "timestamp_conversion": "not converted: instrument time zone is unspecified",
               "timestamp_utc": np.full(len(raw), "", dtype="U1"),
@@ -96,4 +109,14 @@ def convert_timestamps(ticks: np.ndarray, source_timezone: str | None = None,
                   timestamp_utc=np.array(utc_times), timestamp_est=np.array(est_times),
                   timestamp_eastern=np.array(eastern_times),
                   timestamp_ticks_utc=np.array(utc_ticks, dtype=np.int64))
+    return result
+
+
+def elapsed_seconds(ticks, origin):
+    """Missing recovered timestamps stay NaN; never estimate recording times."""
+    values = np.asarray(ticks, dtype=np.int64)
+    result = np.full(values.shape, np.nan)
+    if origin:
+        valid = values > 0
+        result[valid] = (values[valid]-origin)/TICKS_PER_SECOND
     return result

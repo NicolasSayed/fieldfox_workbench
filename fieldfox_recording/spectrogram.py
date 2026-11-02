@@ -32,6 +32,8 @@ class SpectrogramSection:
     first_timestamp: str
     effective_step: int
     timestamp_ticks: NDArray[np.int64]
+    zero_filled: NDArray[np.bool_] | None = None
+    recorded_value_counts: NDArray[np.uint32] | None = None
 
 
 def load_section(
@@ -65,6 +67,8 @@ def load_section(
         raise RecordingError("Select at least two sweeps for a waterfall")
     axis = mask = power = ticks = None
     first_timestamp = ""
+    filled = np.zeros(len(indices), dtype=bool)
+    recorded_counts = np.empty(len(indices), dtype=np.uint32)
     for row, sweep in enumerate(rec.iter_sweeps(start_sweep, stop, effective_step)):
         current_axis = sweep.state.frequency_hz
         if row == 0:
@@ -85,14 +89,17 @@ def load_section(
             raise RecordingError(f"Frequency axis changes at sweep {sweep.trace_id}; choose a shorter section")
         power[row] = sweep.power_dbm_traces[trace_slot, mask]
         ticks[row] = sweep.ticks
-    if np.any(np.diff(ticks) <= 0):
+        filled[row] = sweep.header.get('zero_filled', False)
+        recorded_counts[row] = sweep.header.get('recorded_value_count', sweep.state.value_count)
+    if np.any(np.diff(ticks[ticks > 0]) <= 0):
         raise RecordingError("Selected sweep timestamps must be strictly increasing")
     if not np.isfinite(power).any():
         raise RecordingError("Selected section has no finite power values")
     # Subtract int64 ticks before conversion to preserve fine time differences.
-    elapsed = (ticks - ticks[0]).astype(np.float64) / 10_000_000
+    from .timezones import elapsed_seconds
+    elapsed = elapsed_seconds(ticks, ticks[0])
     return SpectrogramSection(axis[mask], elapsed, power, indices,
-                              trace_slot, first_timestamp, effective_step, ticks)
+                              trace_slot, first_timestamp, effective_step, ticks, filled, recorded_counts)
 
 
 def plot_section(
@@ -115,10 +122,11 @@ def plot_section(
         fig, ax = plt.subplots(figsize=(11, 6), layout="constrained")
     else:
         fig, ax = figure, figure.subplots()
-    chart = ax.pcolormesh(section.frequency_hz / 1e6, section.elapsed_s,
+    missing_times = not np.isfinite(section.elapsed_s).all()
+    chart = ax.pcolormesh(section.frequency_hz / 1e6, section.sweep_indices if missing_times else section.elapsed_s,
                          np.ma.masked_invalid(section.power_dbm), shading="nearest",
                          cmap=cmap, vmin=vmin, vmax=vmax, rasterized=True)
-    ax.set(xlabel="Frequency (MHz)", ylabel="Elapsed time from first selected sweep (s)",
+    ax.set(xlabel="Frequency (MHz)", ylabel="Original sweep index (timestamps missing)" if missing_times else "Elapsed time from first selected sweep (s)",
            title=f"{title}\nSweeps {section.sweep_indices[0]}..{section.sweep_indices[-1]}, "
                  f"trace slot {section.trace_slot}, row step {section.effective_step}")
     ax.text(0, -0.14, f"First selected instrument timestamp: {section.first_timestamp} (timezone unspecified)",
@@ -145,11 +153,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-timezone", default="EST", help="Assumed instrument clock zone (default EST, fixed -05:00); also UTC, America/New_York, +/-HH:MM or another IANA name")
     parser.add_argument("--dst-fold", type=int, choices=[0, 1], help="For repeated local times: 0=earlier occurrence, 1=later")
     parser.add_argument("--show", action="store_true", help="Show interactive window even when saving an image")
+    parser.add_argument("--recover-incomplete", action="store_true", help="Zero-fill short TRC tails, preserving original sweep indices")
+    parser.add_argument("--expected-sweeps", type=int, help="Recovery: explicit final count when the last tail has no index")
 
 
 def run(args: argparse.Namespace) -> int:
     """Select, plot and save or show a section without changing input files."""
-    rec = FieldFoxRecording.open(args.path)
+    rec = FieldFoxRecording.open(args.path, recover_incomplete=args.recover_incomplete, expected_sweeps=args.expected_sweeps)
     section = load_section(rec, start_sweep=args.start_sweep, stop_sweep=args.stop_sweep,
                            step=args.step, max_sweeps=args.max_sweeps, freq_min_hz=args.freq_min_hz,
                            freq_max_hz=args.freq_max_hz, trace_slot=args.trace_slot)

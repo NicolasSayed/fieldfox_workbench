@@ -41,8 +41,9 @@ def to_csv(rec: FieldFoxRecording, path: str | Path) -> None:
     with _destination(rec, path) as destination:
         with destination.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.writer(stream)
+            extra = ['zero_filled', 'timestamp_valid', 'recorded_value_count'] if rec.recovery['enabled'] else []
             writer.writerow(["trace_id", "state_id", "trace_slot", "trace_mask", "timestamp_local_unspecified",
-                             "timestamp_ticks", "point_index", "frequency_hz", "time_s", "power_dbm"])
+                             "timestamp_ticks", "point_index", "frequency_hz", "time_s", "power_dbm"] + extra)
             for sweep in rec:
                 state = sweep.state
                 zero_span = state.span_hz == 0
@@ -51,7 +52,9 @@ def to_csv(rec: FieldFoxRecording, path: str | Path) -> None:
                     for point, (x, power) in enumerate(zip(axis, trace)):
                         writer.writerow([sweep.trace_id, state.state_id, slot, sweep.trace_mask, sweep.timestamp,
                                          sweep.ticks, point, "" if zero_span else format(x, ".17g"),
-                                         format(x, ".17g") if zero_span else "", format(power, ".9g")])
+                                         format(x, ".17g") if zero_span else "", format(power, ".9g")] +
+                                        ([int(sweep.header.get('zero_filled', False)), int(sweep.ticks > 0),
+                                          sweep.header.get('recorded_value_count', state.value_count)] if extra else []))
 
 
 def to_npz(rec: FieldFoxRecording, path: str | Path) -> None:
@@ -71,17 +74,22 @@ def to_npz(rec: FieldFoxRecording, path: str | Path) -> None:
         ticks = np.empty(count, dtype="<i8")
         state_ids = np.empty(count, dtype="<u2")
         masks = np.empty(count, dtype="u1")
+        filled = np.empty(count, dtype=bool)
+        recorded = np.empty(count, dtype=np.uint32)
         headers = []
         try:
             for i, sweep in enumerate(rec):
                 power[i], auxiliary[i] = sweep.power_dbm_traces, sweep.auxiliary_values
                 ticks[i], state_ids[i], masks[i] = sweep.ticks, sweep.state.state_id, sweep.trace_mask
+                filled[i] = sweep.header.get('zero_filled', False)
+                recorded[i] = sweep.header.get('recorded_value_count', sweep.state.value_count)
                 headers.append(json.dumps(sweep.header, separators=(",", ":")))
             axis_kind = np.array(["time_s" if s.span_hz == 0 else "frequency_hz" for s in rec.states])
             axes = np.array([s.time_axis_s if s.span_hz == 0 else s.frequency_hz for s in rec.states])
             with destination.open("wb") as stream:
                 np.savez_compressed(stream, power_dbm_traces=power, auxiliary_values=auxiliary,
                                     timestamp_ticks=ticks, state_ids=state_ids, trace_masks=masks,
+                                    zero_filled=filled, timestamp_valid=ticks > 0, recorded_value_counts=recorded,
                                     axes_by_state=axes, axis_kind_by_state=axis_kind,
                                     trace_headers_json=np.array(headers), metadata_json=np.array(json.dumps(rec.metadata)))
         finally:

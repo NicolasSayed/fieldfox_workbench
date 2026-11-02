@@ -170,7 +170,7 @@ class Sweep:
 
     @property
     def timestamp(self) -> str:
-        return ticks_to_iso(self.ticks)
+        return ticks_to_iso(self.ticks) if self.ticks else ""
 
     @property
     def power_dbm(self) -> NDArray[np.float32]:
@@ -256,16 +256,20 @@ class FieldFoxRecording:
     def __init__(self, path: Path, states: list[State], trace_files: list[Path], indexes: list[dict[str, Any]]):
         self.path = path
         self.states = states
+        self.state_first_ids = [s.first_trace_id for s in states]
         self.trace_files = trace_files
         self.indexes = indexes
         self.cancel_event = None
+        self.recovery = {"enabled": False, "zero_filled_sweeps": 0, "partitions": []}
+        self.partitions = None
 
     def _check_cancel(self):
         if self.cancel_event is not None and self.cancel_event.is_set():
             raise RecordingError("Recording operation cancelled")
 
     @classmethod
-    def open(cls, path: str | Path, *, cancel_event=None) -> FieldFoxRecording:
+    def open(cls, path: str | Path, *, cancel_event=None, recover_incomplete: bool = False,
+             expected_sweeps: int | None = None) -> FieldFoxRecording:
         root = Path(path)
         if not root.is_dir():
             raise UnsupportedFormatError("Expected a complete GPSA/RTSA session directory with STA and TRC stores; individual IQ/VITA-49/DLS files are unsupported.")
@@ -286,21 +290,29 @@ class FieldFoxRecording:
                 raise UnsupportedFormatError("Changing record dimensions/version within a session requires an unverified storage layout")
         stride = trace_record_size(first)
         for p in trace_files:
-            if p.stat().st_size == 0 or p.stat().st_size % stride:
+            if not recover_incomplete and (p.stat().st_size == 0 or p.stat().st_size % stride):
                 raise RecordingError(f"{p}: size {p.stat().st_size} is not a positive multiple of trace stride {stride}")
         from .index import read_index
         indexes = [read_index(p) for p in sorted(root.iterdir()) if p.is_file() and p.name.lower() in {"sta.rpx", "trc.rpx"}]
         physical_counts = {"STA": len(states), "TRC": sum(p.stat().st_size // stride for p in trace_files)}
         for index in indexes:
             for kind, store in index["stores"].items():
-                if kind in physical_counts and store.get("num_records") != physical_counts[kind]:
+                if kind in physical_counts and store.get("num_records") != physical_counts[kind] and not (kind == "TRC" and recover_incomplete):
                     raise RecordingError(f"RPX {kind} record count {store.get('num_records')} differs from physical count {physical_counts[kind]}")
         recording = cls(root, states, trace_files, indexes)
         recording.cancel_event = cancel_event
         recording._check_cancel()
+        if expected_sweeps is not None and not recover_incomplete:
+            raise RecordingError("expected_sweeps requires recover_incomplete=True")
+        if recover_incomplete:
+            from .recovery import plan
+            recording.partitions, recording.recovery = plan(recording, expected_sweeps)
         return recording
 
     def __iter__(self) -> Iterator[Sweep]:
+        if self.partitions is not None:
+            yield from self.iter_sweeps()
+            return
         expected_id = 0
         stride = trace_record_size(self.states[0])
         previous_state = -1
@@ -323,6 +335,8 @@ class FieldFoxRecording:
                 yield Sweep(**(vars(sweep) | {"source": str(path), "offset": offset}))
 
     def __len__(self) -> int:
+        if self.partitions is not None:
+            return sum(p.count for p in self.partitions)
         stride = trace_record_size(self.states[0])
         return sum(p.stat().st_size // stride for p in self.trace_files)
 
@@ -336,6 +350,20 @@ class FieldFoxRecording:
         stop = len(self) if stop is None else stop
         if not 0 <= start <= stop <= len(self) or step < 1:
             raise RecordingError(f"Require 0 <= start <= stop <= {len(self)} and step >= 1")
+        if self.partitions is not None:
+            from .recovery import read_sweep
+            index = start
+            for partition in self.partitions:
+                end = partition.start+partition.count
+                if index >= stop:
+                    return
+                if index >= end:
+                    continue
+                with partition.path.open("rb") as stream:
+                    while index < min(end, stop):
+                        yield read_sweep(self, partition, index, stream)
+                        index += step
+            return
         stride = trace_record_size(self.states[0])
         index, base = start, 0
         previous_state = -1
@@ -380,6 +408,7 @@ class FieldFoxRecording:
                 "trace_count": self.states[0].trace_count, "auxiliary_count": self.states[0].auxiliary_count,
                 "trace_stride_bytes": trace_record_size(self.states[0]), "power_unit": "dBm",
                 "timestamp_basis": ".NET ticks; local/unspecified instrument clock, timezone unavailable",
+                "recovery": self.recovery,
                 "indexes": self.indexes,
                 "states": [s.as_dict() for s in self.states]}
 
@@ -432,7 +461,7 @@ class FieldFoxRecording:
         return save_session_mat(self, path, **options)
 
 
-def inspect_path(path: str | Path) -> dict[str, Any]:
+def inspect_path(path: str | Path, **options) -> dict[str, Any]:
     """Inspect recognized states or unknown prefixes without guessing a decoder."""
     target = Path(path)
     if not target.exists():
@@ -464,7 +493,7 @@ def inspect_path(path: str | Path) -> dict[str, Any]:
         for p in _files(target, "STA"):
             for offset, data in _records(p, STATE_RECORD_SIZE):
                 states.append({"source": str(p), "offset": offset, **parse_state(data).as_dict()})
-        rec = FieldFoxRecording.open(target)
+        rec = FieldFoxRecording.open(target, **options)
         # Inspect verifies every trace boundary/link without materializing an array.
         count = sum(1 for _ in rec)
         return {"supported": True, "verified_trace_records": count, "metadata": rec.metadata, "files": files}

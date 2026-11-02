@@ -9,6 +9,7 @@ import struct
 
 from fieldfox_recording import FieldFoxRecording
 from tests.fixtures import make_session, state_bytes, trace_bytes, TICKS
+from tests.test_recovery import short_session, recover, rpx
 
 
 def main():
@@ -30,6 +31,27 @@ def main():
         if name == 'zero':
             next(session.glob('dSTA*/*.STA')).write_bytes(state_bytes(span=0))
         FieldFoxRecording.open(session).to_mat(root/f'python_{name}', chunk_sweeps=2)
+    for name in ('short_index', 'short_next', 'partial', 'short_explicit', 'empty', 'header', 'deviated'):
+        options = {}
+        if name.startswith('short'):
+            session = short_session(root/f'session_{name}', indexed=name=='short_index',
+                                    next_file=name=='short_next')
+            if name=='short_explicit': options['expected_sweeps']=500
+        elif name=='deviated':
+            session = short_session(root/f'session_{name}',indexed=False)
+            trace = next(session.glob('dTRC*/*.TRC'))
+            trace.with_name('00000001.TRC').write_bytes(b''.join(
+                trace_bytes(trace_id=i,ticks=TICKS+i*10_000_000) for i in range(497,500)))
+            (session/'TRC.rpx').write_bytes(rpx(deviations=[(0,497),(1,3)]))
+        else:
+            session = make_session(root/f'session_{name}',traces=2)
+            trace = next(session.glob('dTRC*/*.TRC'))
+            content = trace.read_bytes(); stride = len(content)//3
+            if name=='partial': trace.write_bytes(content[:2*stride+54])
+            elif name=='header': trace.write_bytes(content[:2*stride+15])
+            else:
+                trace.write_bytes(b''); options['expected_sweeps']=3
+        recover(session,**options).to_mat(root/f'python_{name}',chunk_sweeps=250)
     bad = make_session(root/'session_bad')
     trace = next(bad.glob('dTRC*/*.TRC'))
     content = bytearray(trace.read_bytes()); stride = len(content)//3

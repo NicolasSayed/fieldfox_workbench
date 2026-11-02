@@ -79,7 +79,10 @@ def read_index(path: str | Path) -> dict[str, Any]:
                         field["pairs"] = list(struct.iter_unpack("<ii", raw))
                 if tag == b"FDAT" and file_type:
                     names = {11: "num_records", 12: "nominal_files_per_dir", 13: "nominal_records_per_file"}
-                    result["stores"][file_type] = {names[f["tag"]]: f["value"] for f in fields if "value" in f}
+                    result["stores"].setdefault(file_type, {}).update({names[f["tag"]]: f["value"] for f in fields if "value" in f})
+                if tag == b"fDEV" and file_type:
+                    names = {11: "directory_deviations", 12: "file_deviations"}
+                    result["stores"].setdefault(file_type, {}).update({names[f["tag"]]: f["pairs"] for f in fields if "pairs" in f})
             else:
                 # sTRS names/settings and unknown chunks retained without interpretation.
                 chunk["raw_body_hex"] = body.hex()

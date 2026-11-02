@@ -183,11 +183,18 @@ little-endian int32 payload length, byte item ID, payload.
 FDAT item IDs: 10 ASCII store type, 11 int32 total records, 12 int32 nominal
 files per directory, 13 int32 nominal records per file. fDEV item 10 is store
 type; 11 and 12 are pairs of int32 describing directory/file count exceptions.
+The file exception pair is `(zero_based_file_number, record_count)`, confirmed
+by `apf.t` (cases 11/15 initialize nominal counts; case 5 replaces a file's
+count). Recovery uses these counts, rather than assuming every file contains
+the nominal number of records.
 `sTRS` stores length-prefixed ASCII key/value settings; it is retained as raw
 bytes by this implementation. Unknown chunks and fields are also retained.
 
-Present indexes are checked for CRC and total-count agreement with physical
-records. The reader can scan recognized stores without an index, as can the
+Present indexes are checked for CRC. Strict Python decoding requires total-count
+agreement with physical records. Explicit recovery mode uses declared counts to
+zero-fill missing TRC tails, retaining available complete float32 values and
+reporting the replacements separately; this is a recovery policy, not evidence
+that placeholder zero is an instrument measurement. The reader can scan recognized stores without an index, as can the
 vendor fallback (`apf.n`). Missing final physical records cannot always be
 detected when there is no declared count or checksum. No trace checksum or
 compression is present in the recovered als/alt path.

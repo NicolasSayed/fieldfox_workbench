@@ -95,7 +95,7 @@ that follows daylight saving time; repeated times require a fold selection.
 
 For the simplest MATLAB-only workflow, open
 [`matlab/export_whole_session.m`](matlab/export_whole_session.m), edit
-`sessionFolder` and `outputFolder`, and press **Run**. Keep the four `.m` files
+`sessionFolder` and `outputFolder`, and press **Run**. Keep the five `.m` files
 from `matlab/` together. Python and Data Link are not required.
 
 ```matlab
@@ -128,6 +128,36 @@ disp(d.timestamp_utc(1)); disp(d.timestamp_est(1));
 
 See [full-session MAT format and usage](docs/MAT_EXPORT.md) for partial reads,
 zero-span axes, multi-part processing and native MATLAB validation limits.
+
+### Incomplete TRC files (for example, 500 expected / 497 present)
+
+Workbench's **Zero-fill incomplete TRC tails** option is enabled by default,
+as is `RecoverIncomplete` in the MATLAB scripts. The reader keeps complete
+sweeps and complete samples from a partial sweep, fills the missing values
+with zeros, and preserves later sweep positions. RPX counts (including per-file
+deviations) or the next partition's first sweep ID determine missing tail lengths.
+Nothing is changed in the original recording.
+
+For a short **final** file without an RPX count, the intended total is unknown.
+Set `expectedSweeps` in the short MATLAB script, or **Expected total sweeps** in
+Workbench. This is the total for the entire session, not a per-file limit:
+
+```matlab
+export_fieldfox_session(sessionFolder, outputFolder, ...
+    'RecoverIncomplete', true, 'ExpectedSweeps', 500);
+```
+
+MAT files include `zero_filled`, `recorded_value_counts` and `timestamp_valid`.
+Missing headers have ticks `0`, blank UTC/EST strings and `NaN` elapsed time.
+No missing timestamps are guessed. Spectrograms use original sweep indices if
+selected timestamps are missing. **Zero means missing data here, not measured
+0 dBm**; these placeholders participate in plots, means and holds. Use the flags
+to exclude them in analysis. Unsupported formats, corrupt full records and bad
+index CRCs still fail clearly. CLI/API remain strict by default; opt into recovery:
+
+```powershell
+python -m fieldfox_recording export "D:\data\RTAUTOsession01" --format mat --output "D:\exports\recovered_MAT" --recover-incomplete --expected-sweeps 500
+```
 
 ### Running max hold / min hold
 
@@ -262,7 +292,8 @@ remain when the app exits. Preferences/recent paths are saved only in
 
 Supported recordings are GPSA versions 1–18 and single-block, nonzero-span RTSA
 versions 8–18. The folder name does not determine the format. RTSA density/multiblock
-captures, IQ/VITA-49, unknown versions and partial stores fail explicitly. Generic
+captures, IQ/VITA-49, unknown versions and missing partition files fail explicitly.
+Short existing TRC tails can be zero-filled in recovery mode. Generic
 CSV import is not a proprietary state-file decoder. See
 [binary format](docs/recording_format.md) and [protocol / provenance](docs/protocol.md).
 

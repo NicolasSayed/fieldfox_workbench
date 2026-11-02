@@ -8,6 +8,7 @@ function manifest = export_fieldfox_session(sessionFolder, outputFolder, varargi
 p = inputParser; p.PartialMatching = false;
 addParameter(p,'SweepsPerPart',5000); addParameter(p,'MaxPartMiB',128);
 addParameter(p,'SourceTimeZone','EST'); addParameter(p,'DSTFold',[]);
+addParameter(p,'RecoverIncomplete',true); addParameter(p,'ExpectedSweeps',[]);
 parse(p,varargin{:}); o = p.Results;
 validateattributes(o.SweepsPerPart,{'numeric'},{'scalar','integer','positive','finite'});
 validateattributes(o.MaxPartMiB,{'numeric'},{'scalar','positive','finite','<=',512});
@@ -16,10 +17,14 @@ target = char(java.io.File(char(outputFolder)).getCanonicalPath());
 assert(~strcmpi(source,target) && ~startsWith(lower(target),lower([source filesep])), ...
     'fieldfox:output','Output must be outside the original session folder.');
 assert(~isfolder(target) && ~isfile(target),'fieldfox:output','Output already exists.');
-args = {'MaxSweeps',Inf,'SourceTimeZone',o.SourceTimeZone,'DSTFold',o.DSTFold};
+args = {'MaxSweeps',Inf,'SourceTimeZone',o.SourceTimeZone,'DSTFold',o.DSTFold, ...
+    'RecoverIncomplete',o.RecoverIncomplete,'ExpectedSweeps',o.ExpectedSweeps,'WarnRecovery',false};
 probe = read_fieldfox(source,'StopSweep',1,args{:});
 metadata = jsondecode(probe.metadata_json); states = probe.states;
 total = metadata.n_sweeps; slots = states(1).blocks; points = states(1).points;
+if metadata.recovery.zero_filled_sweeps>0
+    warning('fieldfox:recovered','Zero-filling %d incomplete/missing sweeps; timestamps for missing headers stay blank.',metadata.recovery.zero_filled_sweeps);
+end
 starts = [states.first_trace];
 assert(starts(1)==0 && all(diff(starts)>0) && all(starts<total), ...
     'fieldfox:state','Invalid state transition boundaries.');
@@ -57,7 +62,11 @@ for stateIndex = 1:numel(states)
         clear selected
         data.power_dbm_traces = power; clear power
         data.trace_slot_indices = int32((0:slots-1)');
-        data.elapsed_s = double(data.timestamp_ticks-probe.timestamp_ticks(1))/1e7;
+        data.elapsed_s = nan(rows,1);
+        if probe.timestamp_ticks(1)>0
+            valid=data.timestamp_ticks>0;
+            data.elapsed_s(valid)=double(data.timestamp_ticks(valid)-probe.timestamp_ticks(1))/1e7;
+        end
         data.state_id = states(stateIndex).state_id;
         data.axis_kind = 'frequency_hz';
         if isempty(data.frequency_hz), data.axis_kind = 'time_axis_s'; end

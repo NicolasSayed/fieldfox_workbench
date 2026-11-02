@@ -237,6 +237,8 @@ HELP = """FieldFox Workbench
 
 Clock assumption: EST means fixed UTC-05:00 all year, as requested. The recording has no embedded time zone. Choose America/New_York only if the instrument clock follows daylight saving time. UTC/EST/Eastern exports are based on this declared assumption. MAT exports retain exact integer ticks.
 
+Incomplete TRC files: Zero-fill incomplete TRC tails is enabled by default. Complete samples are preserved; missing values/sweeps become zeros and later sweep indices stay in place. RPX counts or next-partition IDs determine gaps. For a short final file without a declared count, enter Expected total sweeps (entire session). Exports flag zero_filled and timestamp_valid. Missing header times stay blank (ticks 0, elapsed NaN); the spectrogram uses sweep indices. Zeros are placeholders, not measured 0 dBm, and participate in means and holds. Disable recovery for strict verification. Corrupt full records, missing files and bad CRCs still fail.
+
 Compatibility: GPSA recording versions 1–18 and supported RTSA versions 8–18, scalar traces only. RTSA density/multiblock and IQ/VITA-49 are unsupported. Session folders named RTAUTOsession can contain GPSA; headers determine the format. A standalone instrument state .STA is not a recording session.
 
 This is an independent application, not Keysight Data Link. It covers common browse/download, playback, plotting, markers, limits, screenshot, trace and report workflows. Calibration-kit/cable editors, proprietary state editors, DTF transforms, DANL correction, S-parameter/Smith charts, IQ analysis and remote recording configuration are not implemented. Network functions use documented commands and mock-instrument tests; live N9917B validation is still required.

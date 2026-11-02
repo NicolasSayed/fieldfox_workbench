@@ -98,7 +98,7 @@ class Playback:
             trace = self.trace(self.section.power_dbm[index], f"Sweep {self.section.sweep_indices[index]}", trace_role="playback_current")
             from fieldfox_recording.timezones import convert_timestamps
             converted = convert_timestamps(self.section.timestamp_ticks[index:index+1], source_timezone=self.app.viewer.timezone.get() or None,
-                          dst_fold={"Ask if ambiguous": None, "Earlier occurrence": 0, "Later occurrence": 1}[self.app.viewer.fold.get()])
+                          dst_fold={"Ask if ambiguous": None, "Earlier occurrence": 0, "Later occurrence": 1}[self.app.viewer.fold.get()], allow_missing=self.rec.recovery['enabled'])
             trace.metadata.update({k: v[0].item() for k, v in converted.items() if isinstance(v, np.ndarray) and len(v) == 1})
             traces = [trace]
             first = int(self.section.sweep_indices[self.holds.start_row]); last = int(self.section.sweep_indices[index])
@@ -111,7 +111,9 @@ class Playback:
             self.app.plots.set_playback_traces(traces, clear_markers=key[:2] != (self._shown or ())[:2])
             self._shown, self._active_trace = key, trace
             self._active_traces = traces
-            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s · hold sweeps {first}–{last}\nUTC {converted['timestamp_utc'][0]}   EST {converted['timestamp_est'][0]}")
+            recovered = self.section.zero_filled is not None and self.section.zero_filled[index]
+            trace.metadata['zero_filled'] = bool(recovered)
+            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s · hold sweeps {first}–{last}{' · ZERO-FILLED missing data' if recovered else ''}\nUTC {converted['timestamp_utc'][0] or 'unknown'}   EST {converted['timestamp_est'][0] or 'unknown'}")
         except Exception as error: self.stop(); self.app.error(error)
 
     def reset_holds(self):

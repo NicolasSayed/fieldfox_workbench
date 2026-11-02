@@ -11,7 +11,7 @@ import numpy as np
 
 from .export import _destination
 from .parser import RecordingError
-from .timezones import convert_timestamps
+from .timezones import convert_timestamps, elapsed_seconds
 
 if TYPE_CHECKING:
     from .parser import FieldFoxRecording
@@ -30,12 +30,15 @@ def save_section_mat(rec: FieldFoxRecording, section: SpectrogramSection,
         from scipy.io import savemat
     except ImportError as error:
         raise RecordingError("MAT export requires SciPy: python -m pip install '.[mat]'") from error
-    times = convert_timestamps(section.timestamp_ticks, source_timezone, dst_fold)
+    times = convert_timestamps(section.timestamp_ticks, source_timezone, dst_fold, allow_missing=rec.recovery['enabled'])
     payload = {"frequency_hz": section.frequency_hz, "elapsed_s": section.elapsed_s,
                "power_dbm": section.power_dbm, "sweep_indices": section.sweep_indices,
                "timestamp_ticks": section.timestamp_ticks,
                "trace_slot": section.trace_slot, "effective_step": section.effective_step,
                "metadata_json": json.dumps(rec.metadata), **times}
+    if section.zero_filled is not None:
+        payload['zero_filled'] = section.zero_filled
+        payload['recorded_value_counts'] = section.recorded_value_counts
     for name, value in list(payload.items()):
         if isinstance(value, np.ndarray) and value.dtype.kind == "U":
             payload[name] = value.astype(object)  # MATLAB cell array of exact ISO strings
@@ -91,6 +94,8 @@ def save_session_mat(rec: FieldFoxRecording, path: str | Path, *,
         ticks = np.empty(capacity, dtype=np.int64)
         indices = np.empty(capacity, dtype=np.int64)
         masks = np.empty(capacity, dtype=np.uint8)
+        filled = np.empty(capacity, dtype=bool)
+        recorded_counts = np.empty(capacity, dtype=np.uint32)
         headers = []
         count = 0
         current_state = None
@@ -98,7 +103,7 @@ def save_session_mat(rec: FieldFoxRecording, path: str | Path, *,
 
         def flush():
             rec._check_cancel()
-            times = convert_timestamps(ticks[:count], source_timezone, dst_fold)
+            times = convert_timestamps(ticks[:count], source_timezone, dst_fold, allow_missing=rec.recovery['enabled'])
             axis_name = "time_axis_s" if current_state.span_hz == 0 else "frequency_hz"
             axis = getattr(current_state, axis_name)
             payload = {"power_dbm_traces": power[:count],
@@ -107,7 +112,8 @@ def save_session_mat(rec: FieldFoxRecording, path: str | Path, *,
                        "trace_masks": masks[:count],
                        "state_ids": np.full(count, current_state.state_id, dtype=np.uint16),
                        "trace_slot_indices": np.arange(state.trace_count, dtype=np.int32),
-                       "elapsed_s": (ticks[:count] - first_tick) / 1e7,
+                       "elapsed_s": elapsed_seconds(ticks[:count], first_tick),
+                       "zero_filled": filled[:count], "recorded_value_counts": recorded_counts[:count],
                        axis_name: axis, "axis_kind": axis_name,
                        "state_id": current_state.state_id,
                        "metadata_json": json.dumps(current_state.as_dict()),
@@ -139,6 +145,8 @@ def save_session_mat(rec: FieldFoxRecording, path: str | Path, *,
             power[count] = sweep.power_dbm_traces
             auxiliary[count] = sweep.auxiliary_values
             ticks[count], indices[count], masks[count] = sweep.ticks, sweep.trace_id, sweep.trace_mask
+            filled[count] = sweep.header.get('zero_filled', False)
+            recorded_counts[count] = sweep.header.get('recorded_value_count', sweep.state.value_count)
             headers.append(sweep.header)
             count += 1
         if count:

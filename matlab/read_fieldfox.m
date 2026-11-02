@@ -7,7 +7,8 @@ function data = read_fieldfox(sessionFolder, varargin)
 % Use 'MaxSweeps',Inf for every requested row (20 million cell limit).
 % SourceTimeZone defaults to EST (fixed UTC-05:00), per the user's clock.
 % Supported layouts match Python versions 1..18; RTSA needs one block and
-% nonzero span. RPX index CRCs are not checked here; use Python inspect.
+% nonzero span. Recovery (default) checks RPX CRCs/TRC counts and zero-fills
+% short TRC tails. Missing-header times stay blank, never estimated.
 
 p = inputParser; p.PartialMatching = false;
 addParameter(p,'StartSweep',0); addParameter(p,'StopSweep',Inf);
@@ -15,6 +16,8 @@ addParameter(p,'Step',1); addParameter(p,'MaxSweeps',2000);
 addParameter(p,'FreqMinHz',-Inf); addParameter(p,'FreqMaxHz',Inf);
 addParameter(p,'TraceSlot',0); addParameter(p,'SourceTimeZone','EST');
 addParameter(p,'DSTFold',[]);
+addParameter(p,'RecoverIncomplete',true); addParameter(p,'ExpectedSweeps',[]);
+addParameter(p,'WarnRecovery',true);
 parse(p,varargin{:}); o = p.Results;
 sessionFolder = char(java.io.File(char(sessionFolder)).getCanonicalPath());
 assert(isfolder(sessionFolder),'fieldfox:input','Expected a complete session folder.');
@@ -42,8 +45,12 @@ for s = states
 end
 headerBytes = 32 + 12*(s0.version>=4);
 stride = headerBytes + 4*(s0.points*s0.blocks+s0.auxiliary);
-counts = [trc.bytes]/stride;
-assert(all(counts>0 & counts==fix(counts)),'fieldfox:truncated','Invalid TRC file length.');
+firstIds = [states.first_trace];
+assert(firstIds(1)==0 && all(diff(firstIds)>0),'fieldfox:state','Invalid state transition boundaries.');
+[counts,~,recovery] = fieldfox_trace_layout(sessionFolder,trc,stride,s0.version,o.RecoverIncomplete,o.ExpectedSweeps);
+if o.WarnRecovery && recovery.zero_filled_sweeps>0
+    warning('fieldfox:recovered','Zero-filling %d incomplete/missing sweeps; see zero_filled flags.',recovery.zero_filled_sweeps);
+end
 total = sum(counts); stop = min(o.StopSweep,total);
 validateattributes(o.StartSweep,{'numeric'},{'scalar','integer','nonnegative','finite'});
 validateattributes(o.Step,{'numeric'},{'scalar','integer','positive','finite'});
@@ -67,6 +74,7 @@ assert(rows<=20000000 && rows*s0.auxiliary<=20000000, ...
     'fieldfox:memory','Selected auxiliary arrays exceed the allocation limit; select fewer sweeps.');
 ticks = zeros(rows,1,'int64'); masks = zeros(rows,1,'uint8');
 stateIds = zeros(rows,1,'uint16'); auxiliary = zeros(rows,s0.auxiliary,'single');
+zeroFilled = false(rows,1); recordedCounts = zeros(rows,1,'uint32');
 power = []; referenceAxis = []; axisKind = ''; base = 0; previousState = -1;
 for k = 1:numel(trc)
     selected = find(indices>=base & indices<base+counts(k));
@@ -75,12 +83,25 @@ for k = 1:numel(trc)
     cleanup = onCleanup(@() fclose(fid));
     for row = selected'
         index = indices(row); offset = (index-base)*stride;
-        assert(fseek(fid,offset,'bof')==0,'fieldfox:io','Cannot seek to selected record.');
-        b = fread(fid,stride,'*uint8'); assert(numel(b)==stride,'fieldfox:truncated','Short trace read.');
-        sid = double(value(b,2,'uint16'));
-        if s0.version>=5, tid = double(value(b,4,'int32'));
-        else, tid = double(value(b,0,'uint16')); end
+        b = zeros(0,1,'uint8');
+        if offset<trc(k).bytes
+            assert(fseek(fid,offset,'bof')==0,'fieldfox:io','Cannot seek to selected record.');
+            b = fread(fid,min(stride,trc(k).bytes-offset),'*uint8');
+        end
+        assert(o.RecoverIncomplete || numel(b)==stride,'fieldfox:truncated','Short trace read.');
+        zeroFilled(row) = numel(b)<stride; hasHeader = numel(b)>=headerBytes;
+        expectedState = find(firstIds<=index,1,'last')-1;
+        if hasHeader
+            sid = double(value(b,2,'uint16'));
+            if s0.version>=5, tid = double(value(b,4,'int32')); else, tid = double(value(b,0,'uint16')); end
+            recordedCounts(row) = floor((numel(b)-headerBytes)/4);
+            keep = headerBytes+4*double(recordedCounts(row));
+            b = [b(1:keep); zeros(stride-keep,1,'uint8')];
+        else
+            sid = expectedState; tid = index; b = zeros(stride,1,'uint8');
+        end
         assert(sid<numel(states) && tid==index,'fieldfox:link','Invalid trace/state link.');
+        assert(sid==expectedState,'fieldfox:link','Inconsistent state/trace link.');
         s = states(sid+1);
         assert(sid>=previousState && tid>=s.first_trace,'fieldfox:link','Inconsistent state order.');
         if sid+1<numel(states)
@@ -106,9 +127,11 @@ for k = 1:numel(trc)
             assert(strcmp(axisKind,kind) && isequal(referenceAxis,axisValues), ...
                 'fieldfox:axis','Axis changes in the selected section; select a shorter range.');
         end
-        ticks(row) = value(b,8,'int64'); check_ticks(ticks(row));
-        parameter = value(b,headerBytes-8,'double');
-        assert(isfinite(parameter) && parameter>=-2,'fieldfox:header','Invalid trace header parameter.');
+        if hasHeader
+            ticks(row) = value(b,8,'int64'); check_ticks(ticks(row));
+            parameter = value(b,headerBytes-8,'double');
+            assert(isfinite(parameter) && parameter>=-2,'fieldfox:header','Invalid trace header parameter.');
+        end
         values = value(b,headerBytes,'single',s.points*s.blocks+s.auxiliary);
         slot = values(o.TraceSlot*s.points+(1:s.points));
         power(row,:) = reshape(slot(mask),1,[]);
@@ -121,16 +144,18 @@ end
 times = fieldfox_times(ticks,o.SourceTimeZone,o.DSTFold);
 data = times;
 data.power_dbm = power; data.timestamp_ticks = ticks;
-data.elapsed_s = double(ticks-ticks(1))/1e7;
+data.elapsed_s = nan(rows,1);
+if ticks(1)>0, valid=ticks>0; data.elapsed_s(valid)=double(ticks(valid)-ticks(1))/1e7; end
 data.sweep_indices = int64(indices); data.trace_slot = o.TraceSlot; data.effective_step = step;
 data.frequency_hz = []; data.time_axis_s = [];
 data.(axisKind) = referenceAxis(mask)';
 data.auxiliary_values = auxiliary; data.trace_masks = masks; data.state_ids = stateIds;
+data.zero_filled = zeroFilled; data.recorded_value_counts = recordedCounts;
 data.source_session = sessionFolder; data.states = states;
 names = {'GPSA','RTSA'};
 data.metadata_json = jsonencode(struct('application_name',names{s0.application}, ...
     'version',s0.version,'n_sweeps',total,'trace_count',s0.blocks, ...
-    'index_validation','RPX CRCs not checked by MATLAB; use Python inspect'));
+    'recovery',recovery,'index_validation','Recovery validates RPX CRCs and TRC counts; strict mode scans physical records'));
 end
 
 function files = store_files(folder,kind)

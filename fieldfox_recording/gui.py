@@ -47,6 +47,7 @@ class FieldFoxApp:
         self.worker = None
         self.rec = self.section = self.canvas = self.toolbar = self.figure = None
         self.loaded_options = None
+        self.loaded_read_options = None
         self.busy = False
         self.results: queue.Queue = queue.Queue()
         if not embedded:
@@ -88,6 +89,11 @@ class FieldFoxApp:
         ttk.Label(controls, text="EST = fixed UTC−05:00", foreground="#555555").grid(row=row+4, column=0, sticky="w")
         self.fold = tk.StringVar(value="Ask if ambiguous")
         ttk.Combobox(controls, textvariable=self.fold, values=["Ask if ambiguous", "Earlier occurrence", "Later occurrence"], state="readonly", width=25).grid(row=row+5, column=0, sticky="ew", pady=(4, 6))
+        self.recover = tk.BooleanVar(value=True)
+        ttk.Checkbutton(controls, text="Zero-fill incomplete TRC tails", variable=self.recover).grid(row=row+6, column=0, sticky="w")
+        self.expected_sweeps = tk.StringVar()
+        ttk.Label(controls, text="Expected total sweeps (optional)").grid(row=row+7, column=0, sticky="w")
+        ttk.Entry(controls, textvariable=self.expected_sweeps, width=27).grid(row=row+8, column=0, sticky="ew")
         buttons = ttk.Frame(outer); buttons.pack(side="bottom", fill="x", pady=(10, 5), before=content)
         for row, commands in enumerate([
             [("Export section .mat", self.export_mat), ("Save plot image", self.save_image)],
@@ -119,6 +125,10 @@ class FieldFoxApp:
         return dict(vmin=float(self.values["vmin"].get()) if self.values["vmin"].get().strip() else None,
                     vmax=float(self.values["vmax"].get()) if self.values["vmax"].get().strip() else None,
                     cmap=self.cmap.get())
+
+    def _read_options(self) -> dict:
+        text = self.expected_sweeps.get().strip()
+        return dict(recover_incomplete=self.recover.get(), expected_sweeps=int(text) if text else None)
 
     def _error(self, error: Exception) -> None:
         from tkinter import messagebox
@@ -162,10 +172,11 @@ class FieldFoxApp:
             if not path:
                 raise RecordingError("Select a complete recording session folder.")
             selection, colors = self._selection(), self._plot_options()
+            read_options = self._read_options()
         except (ValueError, RecordingError) as error:
             self._error(error); return
         def work():
-            rec = FieldFoxRecording.open(path, cancel_event=self.cancel_event)
+            rec = FieldFoxRecording.open(path, cancel_event=self.cancel_event, **read_options)
             return rec, load_section(rec, **selection)
         def done(result):
             from matplotlib.figure import Figure
@@ -175,7 +186,10 @@ class FieldFoxApp:
             self._embed(figure)
             self.rec, self.section = rec, section
             self.loaded_options = (path, selection, colors)
+            self.loaded_read_options = read_options
             self.status.set(f"{rec.metadata['application_name']}: {len(rec)} total sweeps. Selected {len(section.sweep_indices)} × {len(section.frequency_hz)} bins, row step {section.effective_step}. Section MAT saves this selection; full-session MAT saves every sweep and trace.")
+            if rec.recovery['zero_filled_sweeps']:
+                self.status.set(self.status.get() + f" WARNING: {rec.recovery['zero_filled_sweeps']} sweeps zero-filled; zeros are placeholders, not measurements.")
             if self.on_loaded is not None:
                 self.on_loaded(rec, section)
         self._job(work, done, "Reading selected sweeps…")
@@ -205,7 +219,7 @@ class FieldFoxApp:
             if self.section is None:
                 raise RecordingError("Load a section first.")
             path, selection, colors = self.loaded_options
-            if path != self.path.get().strip() or selection != self._selection() or (plot and colors != self._plot_options()):
+            if path != self.path.get().strip() or selection != self._selection() or self.loaded_read_options != self._read_options() or (plot and colors != self._plot_options()):
                 raise RecordingError("Click Load / update plot to apply the changed controls before exporting.")
         except (ValueError, RecordingError) as error:
             self._error(error); return False
@@ -254,12 +268,16 @@ class FieldFoxApp:
         zone = self.timezone.get().strip() or None
         fold = {"Ask if ambiguous": None, "Earlier occurrence": 0, "Later occurrence": 1}[self.fold.get()]
         report = getattr(self, "report_progress", None)
+        try:
+            read_options = self._read_options()
+        except ValueError as error:
+            self._error(error); return
         def work():
-            rec = FieldFoxRecording.open(path, cancel_event=self.cancel_event)
+            rec = FieldFoxRecording.open(path, cancel_event=self.cancel_event, **read_options)
             return rec.to_mat(target, source_timezone=zone, dst_fold=fold,
                               progress=(lambda done, total: report(f"MAT export: {done:,} / {total:,} sweeps")) if report else None)
         self._job(work, lambda result: self.status.set(
-            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}."),
+            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}. Zero-filled sweeps: {result['metadata']['recovery']['zero_filled_sweeps']}."),
             "Exporting full session to MATLAB (all sweeps, traces and bins)…")
 
     def export_full(self, kind: str) -> None:

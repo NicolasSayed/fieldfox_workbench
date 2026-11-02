@@ -14,6 +14,7 @@ Keep these files together in `matlab/`:
 - `export_fieldfox_session.m`: full-session exporter.
 - `read_fieldfox.m`: independent STA/TRC reader.
 - `fieldfox_times.m`: exact ticks, instrument/UTC/EST/Eastern time conversions.
+- `fieldfox_trace_layout.m`: per-partition counts, RPX CRCs and short-tail recovery.
 
 Open `export_whole_session.m`, change its paths and press Run. Alternatively:
 
@@ -29,7 +30,7 @@ MATLAB and Python stage their own output and expose the final folder only after
 successful completion. Workbench chooses an unused name automatically. For CLI
 or MATLAB calls, choose another output name if it already exists.
 
-The MATLAB script writes **v7.3** files. MATLAB's
+The MATLAB script enables short-tail recovery by default and writes **v7.3** files. MATLAB's
 [`matfile`](https://www.mathworks.com/help/matlab/ref/matlab.io.matfile.html)
 supports reading just part of an array from these files:
 
@@ -39,7 +40,9 @@ firstSweep = reshape(m.power_dbm_traces(1,1,:), [], 1);
 ```
 
 MATLAB R2024b Update 3 was used for the cross-language checks. The native reader
-does not check RPX index CRCs; Python's session loader does. Native MAT files
+checks present RPX index CRCs and TRC counts in recovery mode; strict native mode
+scans physical records without validating the index. Python checks present
+indexes in both modes. Native MAT files
 retain raw STA headers in `states`; Python parts also retain decoded per-sweep
 headers as `trace_headers_json`. This is an analysis export, not an archival copy
 of every original byte. Keep the original recording for provenance.
@@ -87,6 +90,9 @@ clock zone. Even a small session uses this folder layout.
 | `timestamp_instrument`, `timestamp_utc`, `timestamp_est`, `timestamp_eastern` | ISO strings with seven fractional digits |
 | `source_timezone`, `timestamp_conversion` | Declared clock assumption and conversion description |
 | `elapsed_s` | Seconds from the **first sweep of the session**, continuous across parts |
+| `zero_filled` | True for any sweep with a missing header or payload values |
+| `recorded_value_counts` | Count of complete original float32 values (flattened power slots, then auxiliary fields); remaining values were zero-filled |
+| `timestamp_valid` | False when a missing header prevents recovering its timestamp |
 | `state_ids`, `trace_masks`, `auxiliary_values` | Per-sweep state, stored trace mask and unscaled auxiliary fields |
 | `metadata_json` | State metadata in Python parts; session summary in native parts |
 
@@ -105,6 +111,39 @@ EST is **fixed UTC−05:00 all year**. The recording does not encode a time zone
 Choose `America/New_York` only if the instrument clock follows DST; ambiguous
 hours require `DSTFold`, 0/1 in MATLAB, or `--dst-fold 0/1` in Python. An empty
 source zone preserves instrument times and leaves converted fields empty.
+
+## Short TRC recovery
+
+Workbench's **Zero-fill incomplete TRC tails** and MATLAB's `RecoverIncomplete`
+default to enabled. Python CLI/API decoding defaults to strict; use
+`--recover-incomplete` or `FieldFoxRecording.open(path, recover_incomplete=True)`.
+
+For 500 expected records with only 497 present, the last three positions contain
+zeros and later partitions retain their original sweep IDs. Available complete
+samples in a torn sweep are retained; a torn float itself becomes zero. A torn
+or absent header means that entire sweep is zero-filled. The source files are
+never padded or rewritten. The manifest's `metadata.recovery` identifies affected
+files, expected/present counts and how the counts were determined.
+
+RPX FDAT/fDEV counts are checked, including legitimate shorter partitions. Without
+an index, the next file's first sweep ID can establish a gap. The intended length
+of a final file containing 497 complete records cannot be inferred as 500 from
+its size alone. If no index declares it, specify **Expected total sweeps** in the
+GUI, `expectedSweeps` in `export_whole_session.m`, `'ExpectedSweeps',500` in MATLAB,
+or `--expected-sweeps 500` in the CLI. The number refers to the entire session.
+
+Missing timestamps are not interpolated: ticks and converted UTC ticks are `0`,
+timestamp strings are empty, `timestamp_valid` is false and elapsed seconds are
+`NaN`. If the session's very first timestamp is missing, all session-relative
+elapsed seconds are unknown. MATLAB plots should use `double(d.sweep_indices)`
+as the vertical axis when `any(~isfinite(d.elapsed_s))`. The Python spectrogram
+does that automatically and labels the axis accordingly.
+
+**Placeholder zeros are not measured 0 dBm.** They participate in existing
+plot/hold/mean operations. Exclude rows using `~d.zero_filled` (or use
+`recorded_value_counts` for partial-row processing) when computing measurements.
+Missing partition files, unsupported formats, invalid full records, contradictory
+indexes and CRC failures remain errors. Disable recovery for strict verification.
 
 ## Process all parts in MATLAB
 
@@ -137,7 +176,8 @@ test_full_session('D:\temp\fieldfox_mat_test');
 Checks compare native MAT files to Python exports for every slot/value, axes,
 auxiliary fields, masks, exact ticks, UTC/EST strings and elapsed times. Fixtures
 cover old GPSA, partitioned GPSA with two slots/settings changes, RTSA and zero
-span, plus existing-output protection, late corruption cleanup and v7.3 partial
+span, 497-of-500 records, next-file gaps, explicit final counts, torn floats,
+missing headers, empty files, RPX deviations, existing-output protection, late corruption cleanup and v7.3 partial
 reads. All fixtures are generated in code. This validates cross-language
 agreement on synthetic sessions, not a new comparison against an instrument or
 Data Link CSV export.
