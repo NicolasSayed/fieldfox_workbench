@@ -91,7 +91,8 @@ clock zone. Even a small session uses this folder layout.
 | `source_timezone`, `timestamp_conversion` | Declared clock assumption and conversion description |
 | `elapsed_s` | Seconds from the **first sweep of the session**, continuous across parts |
 | `zero_filled` | True for any sweep with a missing header or payload values |
-| `recorded_value_counts` | Count of complete original float32 values (flattened power slots, then auxiliary fields); remaining values were zero-filled |
+| `recorded_value_counts` | Count of complete original float32 values (flattened power slots, then auxiliary fields); missing power uses −300 dBm, missing auxiliary fields use 0 |
+| `recovery_fill_dbm` | −300, the missing-power placeholder |
 | `timestamp_valid` | False when a missing header prevents recovering its timestamp |
 | `state_ids`, `trace_masks`, `auxiliary_values` | Per-sweep state, stored trace mask and unscaled auxiliary fields |
 | `metadata_json` | State metadata in Python parts; session summary in native parts |
@@ -114,14 +115,14 @@ source zone preserves instrument times and leaves converted fields empty.
 
 ## Short TRC recovery
 
-Workbench's **Zero-fill incomplete TRC tails** and MATLAB's `RecoverIncomplete`
+Workbench's **Fill incomplete TRC tails (−300 dBm)** and MATLAB's `RecoverIncomplete`
 default to enabled. Python CLI/API decoding defaults to strict; use
 `--recover-incomplete` or `FieldFoxRecording.open(path, recover_incomplete=True)`.
 
 For 500 expected records with only 497 present, the last three positions contain
-zeros and later partitions retain their original sweep IDs. Available complete
-samples in a torn sweep are retained; a torn float itself becomes zero. A torn
-or absent header means that entire sweep is zero-filled. The source files are
+−300 dBm power placeholders and later partitions retain their original sweep IDs. Available complete
+samples in a torn sweep are retained; a torn power float becomes −300. A torn
+or absent header means that sweep's power is filled with −300 dBm. The source files are
 never padded or rewritten. The manifest's `metadata.recovery` identifies affected
 files, expected/present counts and how the counts were determined.
 
@@ -139,11 +140,17 @@ elapsed seconds are unknown. MATLAB plots should use `double(d.sweep_indices)`
 as the vertical axis when `any(~isfinite(d.elapsed_s))`. The Python spectrogram
 does that automatically and labels the axis accordingly.
 
-**Placeholder zeros are not measured 0 dBm.** They participate in existing
+**Placeholder −300 values are not measured −300 dBm.** They participate in existing
 plot/hold/mean operations. Exclude rows using `~d.zero_filled` (or use
 `recorded_value_counts` for partial-row processing) when computing measurements.
 Missing partition files, unsupported formats, invalid full records, contradictory
 indexes and CRC failures remain errors. Disable recovery for strict verification.
+
+The existing `zero_filled` / `zero_filled_sweeps` names are retained for script
+compatibility; they now mean recovered data regardless of the fill value.
+Missing auxiliary fields and timestamp sentinels remain 0. Original recorded
+values, including real zeros, are preserved. Re-export from the original session
+to replace placeholders in an earlier MAT file.
 
 ## Process all parts in MATLAB
 

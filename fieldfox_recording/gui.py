@@ -90,7 +90,7 @@ class FieldFoxApp:
         self.fold = tk.StringVar(value="Ask if ambiguous")
         ttk.Combobox(controls, textvariable=self.fold, values=["Ask if ambiguous", "Earlier occurrence", "Later occurrence"], state="readonly", width=25).grid(row=row+5, column=0, sticky="ew", pady=(4, 6))
         self.recover = tk.BooleanVar(value=True)
-        ttk.Checkbutton(controls, text="Zero-fill incomplete TRC tails", variable=self.recover).grid(row=row+6, column=0, sticky="w")
+        ttk.Checkbutton(controls, text="Fill incomplete TRC tails (−300 dBm)", variable=self.recover).grid(row=row+6, column=0, sticky="w")
         self.expected_sweeps = tk.StringVar()
         ttk.Label(controls, text="Expected total sweeps (optional)").grid(row=row+7, column=0, sticky="w")
         ttk.Entry(controls, textvariable=self.expected_sweeps, width=27).grid(row=row+8, column=0, sticky="ew")
@@ -189,7 +189,7 @@ class FieldFoxApp:
             self.loaded_read_options = read_options
             self.status.set(f"{rec.metadata['application_name']}: {len(rec)} total sweeps. Selected {len(section.sweep_indices)} × {len(section.frequency_hz)} bins, row step {section.effective_step}. Section MAT saves this selection; full-session MAT saves every sweep and trace.")
             if rec.recovery['zero_filled_sweeps']:
-                self.status.set(self.status.get() + f" WARNING: {rec.recovery['zero_filled_sweeps']} sweeps zero-filled; zeros are placeholders, not measurements.")
+                self.status.set(self.status.get() + f" WARNING: {rec.recovery['zero_filled_sweeps']} sweeps recovered with −300 dBm power placeholders.")
             if self.on_loaded is not None:
                 self.on_loaded(rec, section)
         self._job(work, done, "Reading selected sweeps…")
@@ -277,7 +277,7 @@ class FieldFoxApp:
             return rec.to_mat(target, source_timezone=zone, dst_fold=fold,
                               progress=(lambda done, total: report(f"MAT export: {done:,} / {total:,} sweeps")) if report else None)
         self._job(work, lambda result: self.status.set(
-            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}. Zero-filled sweeps: {result['metadata']['recovery']['zero_filled_sweeps']}."),
+            f"Saved every sweep and trace in {len(result['parts'])} MAT part(s) to {target}; clock: {zone or 'unspecified'}. Recovered sweeps (−300 dBm fill): {result['metadata']['recovery']['zero_filled_sweeps']}."),
             "Exporting full session to MATLAB (all sweeps, traces and bins)…")
 
     def export_full(self, kind: str) -> None:

@@ -113,7 +113,7 @@ class Playback:
             self._active_traces = traces
             recovered = self.section.zero_filled is not None and self.section.zero_filled[index]
             trace.metadata['zero_filled'] = bool(recovered)
-            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s · hold sweeps {first}–{last}{' · ZERO-FILLED missing data' if recovered else ''}\nUTC {converted['timestamp_utc'][0] or 'unknown'}   EST {converted['timestamp_est'][0] or 'unknown'}")
+            self.status.set(f"{self.rec.path.name} · row {index+1}/{len(self.section.sweep_indices)} · sweep {self.section.sweep_indices[index]} · {self.section.elapsed_s[index]:.7g} s · hold sweeps {first}–{last}{' · RECOVERED missing data (−300 dBm fill)' if recovered else ''}\nUTC {converted['timestamp_utc'][0] or 'unknown'}   EST {converted['timestamp_est'][0] or 'unknown'}")
         except Exception as error: self.stop(); self.app.error(error)
 
     def reset_holds(self):

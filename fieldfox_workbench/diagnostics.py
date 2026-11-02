@@ -65,7 +65,7 @@ def self_test(app, result_path):
             short.to_mat(base / 'recovered_mat')
             recovered = loadmat(base / 'recovered_mat' / 'part_000001.mat')
             assert recovered['zero_filled'][2, 0] and not recovered['timestamp_valid'][2, 0]
-            assert not recovered['power_dbm_traces'][2].any() and recovered['timestamp_ticks'][2, 0] == 0
+            assert (recovered['power_dbm_traces'][2] == -300).all() and recovered['timestamp_ticks'][2, 0] == 0
             csv = base / "synthetic.csv"; csv.write_text("Frequency (Hz),Power (dBm)\n1,-70\n2,-60\n3,-50\n", encoding="utf-8")
             app.browser.open_local_preview(csv)
             deadline = time.monotonic()+5
@@ -97,7 +97,7 @@ def self_test(app, result_path):
             if errors: raise RuntimeError(repr(errors))
             result = {"ok": True, "tabs": len(app.tabs.tabs()), "session_shape": list(section.power_dbm.shape),
                       "checks": ["TkAgg rendering", "recording decoder", "CSV columns", "markers / limits", "MAT section UTC / EST",
-                                 "MAT full session / chunk boundaries", "incomplete TRC zero-fill / missing clocks", "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
+                                 "MAT full session / chunk boundaries", "incomplete TRC -300 dBm fill / missing clocks", "MAT overlays", "Pillow screenshot", "PDF report", "playback controls on trace tab", "running max / min hold and reset",
                                  "read-only file preview", "Help button / dialog"],
                       "numpy": np.__version__, "python_version": sys.version.split()[0],
                       "frozen": bool(getattr(sys, "frozen", False)), "synthetic_data_only": True}

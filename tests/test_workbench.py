@@ -201,18 +201,18 @@ def test_recovered_session_gui_playback_and_full_export(desktop, tmp_path, monke
     assert app.viewer.recover.get()
     app.open_path(path); finish()
     assert app.viewer.section.power_dbm.shape == (3, 3)
-    assert 'zero-filled' in app.viewer.status.get()
+    assert '−300 dBm' in app.viewer.status.get()
     assert 'sweep index' in app.viewer.figure.axes[0].get_ylabel()
     app.playback.index.set(2); app.playback.show()
-    assert not errors and 'ZERO-FILLED' in app.playback.status.get()
+    assert not errors and 'RECOVERED' in app.playback.status.get()
     assert 'unknown' in app.playback.status.get()
-    np.testing.assert_array_equal(app.plots.traces[0].y, [0, 0, 0])
+    np.testing.assert_array_equal(app.plots.traces[0].y, [-300, -300, -300])
     assert app.plots.traces[0].metadata['zero_filled']
     monkeypatch.setattr(filedialog, 'askdirectory', lambda **_: str(tmp_path))
     app.viewer.export_session_mat(); finish()
     data = loadmat(tmp_path / 'short_session_MAT' / 'part_000001.mat')
     assert data['zero_filled'][2, 0] and data['timestamp_ticks'][2, 0] == 0
-    np.testing.assert_array_equal(data['power_dbm_traces'][2, 0], [0, 0, 0])
+    np.testing.assert_array_equal(data['power_dbm_traces'][2, 0], [-300, -300, -300])
 
 
 def test_one_worker_cancel_and_recording_cancel(desktop, tmp_path):

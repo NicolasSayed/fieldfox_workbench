@@ -60,7 +60,7 @@ def test_expected_500_read_497(tmp_path):
     assert [s.trace_id for s in rows]==[496,497,498,499]
     assert rows[0].ticks==TICKS+496*10_000_000
     for row in rows[1:]:
-        np.testing.assert_array_equal(row.power_dbm_traces,[[0,0,0]])
+        np.testing.assert_array_equal(row.power_dbm_traces,[[-300,-300,-300]])
         assert row.ticks==0 and row.timestamp=='' and row.trace_mask==0
         assert row.header['zero_filled'] and not row.header['timestamp_valid']
     assert sum(1 for _ in rec)==500
@@ -89,20 +89,22 @@ def test_no_index_does_not_guess_final_count(tmp_path):
 def test_partial_headers_and_torn_float_zero_fill(tmp_path,available):
     path=make_session(tmp_path/'session')
     trace=next(path.glob('dTRC*/*.TRC'))
-    full=trace.read_bytes(); stride=len(full)//3
+    full=bytearray(trace.read_bytes()); stride=len(full)//3
+    struct.pack_into('<f',full,2*stride+44,0.0)  # A real recorded zero must stay zero.
     trace.write_bytes(full[:2*stride+available])
     rec=recover(path,expected_sweeps=3)
     row=list(rec)[-1]
     assert row.trace_id==2 and row.header['zero_filled']
     if available<44:
         assert row.ticks==0 and row.header['recorded_value_count']==0
-        np.testing.assert_array_equal(row.power_dbm_traces,[[0,0,0]])
+        np.testing.assert_array_equal(row.power_dbm_traces,[[-300,-300,-300]])
     else:
         assert row.ticks==TICKS+2*10_000_000
         count=(available-44)//4
         assert row.header['recorded_value_count']==count
-        expected=np.array([-70,-60,-50,1,2,3,4,5],np.float32)
+        expected=np.array([0,-60,-50,1,2,3,4,5],np.float32)
         expected[count:]=0
+        expected[min(count,3):3]=-300
         np.testing.assert_array_equal(row.power_dbm_traces.ravel(),expected[:3])
         np.testing.assert_array_equal(row.auxiliary_values,expected[3:])
 
@@ -136,6 +138,7 @@ def test_recovered_exports_missing_times_and_plot_axis(tmp_path):
     data=loadmat(tmp_path/'mat'/'part_000002.mat')
     assert data['power_dbm_traces'].shape==(250,1,3)
     assert data['zero_filled'][-3:].all() and not data['timestamp_valid'][-3:].any()
+    assert (data['power_dbm_traces'][-3:]==-300).all() and data['recovery_fill_dbm'][0,0]==-300
     assert not data['timestamp_ticks_utc'][-3:].any()
     assert data['timestamp_est'][-1,0].size==0  # MATLAB empty char
     assert np.isnan(data['elapsed_s'][-3:]).all()
@@ -148,10 +151,11 @@ def test_recovered_exports_missing_times_and_plot_axis(tmp_path):
     rec.to_npz(tmp_path/'all.npz')
     with np.load(tmp_path/'all.npz') as data:
         assert data['zero_filled'].sum()==3 and not data['timestamp_valid'][-3:].any()
+        assert (data['power_dbm_traces'][-3:]==-300).all()
     rec.to_csv(tmp_path/'all.csv')
     with (tmp_path/'all.csv').open(newline='') as stream:
         last=list(csv.DictReader(stream))[-1]
-    assert last['zero_filled']=='1' and last['timestamp_valid']=='0' and last['power_dbm']=='0'
+    assert last['zero_filled']=='1' and last['timestamp_valid']=='0' and last['power_dbm']=='-300'
 
 
 def test_cli_recovery(tmp_path,capsys):

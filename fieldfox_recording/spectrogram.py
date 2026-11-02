@@ -153,7 +153,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source-timezone", default="EST", help="Assumed instrument clock zone (default EST, fixed -05:00); also UTC, America/New_York, +/-HH:MM or another IANA name")
     parser.add_argument("--dst-fold", type=int, choices=[0, 1], help="For repeated local times: 0=earlier occurrence, 1=later")
     parser.add_argument("--show", action="store_true", help="Show interactive window even when saving an image")
-    parser.add_argument("--recover-incomplete", action="store_true", help="Zero-fill short TRC tails, preserving original sweep indices")
+    parser.add_argument("--recover-incomplete", action="store_true", help="Fill missing TRC power with -300 dBm, preserving original sweep indices")
     parser.add_argument("--expected-sweeps", type=int, help="Recovery: explicit final count when the last tail has no index")
 
 

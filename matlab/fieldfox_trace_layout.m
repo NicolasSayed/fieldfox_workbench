@@ -3,6 +3,7 @@ function [counts, starts, recovery] = fieldfox_trace_layout(folder, files, strid
 % FDAT/fDEV layout: Utility.dll ano/ann.qx and apf.t cases 11/15/5.
 sizes = [files.bytes]; counts = sizes/stride; starts = [0 cumsum(counts(1:end-1))];
 recovery = struct('enabled',logical(recover),'zero_filled_sweeps',0,'partitions',{{}});
+recovery.power_fill_dbm = -300; recovery.auxiliary_fill_value = 0;
 if ~recover
     assert(isempty(expected),'fieldfox:recovery','ExpectedSweeps requires RecoverIncomplete.');
     assert(all(counts>0 & counts==fix(counts)),'fieldfox:truncated','Invalid TRC file length.');
@@ -59,7 +60,7 @@ end
 assert(sum(counts)>0,'fieldfox:recovery','Empty session: provide ExpectedSweeps.');
 assert(all(sizes<=counts*stride),'fieldfox:index','More physical data than declared partition records.');
 recovery.count_source = source;
-recovery.note = 'Zero is a placeholder, not measured 0 dBm. Missing headers have ticks=0 and blank times.';
+recovery.note = 'Missing power uses -300 dBm placeholders. Missing headers have ticks=0 and blank times. zero_filled is the legacy recovery flag name.';
 for k = 1:numel(files)
     complete = floor(sizes(k)/stride); missing = counts(k)-complete;
     if missing>0

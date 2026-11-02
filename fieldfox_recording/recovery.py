@@ -9,6 +9,8 @@ import numpy as np
 
 from .parser import RecordingError, Sweep, parse_trace, trace_record_size
 
+MISSING_POWER_DBM = -300.0
+
 
 @dataclass(frozen=True)
 class TracePartition:
@@ -98,15 +100,16 @@ def plan(rec, expected_sweeps=None):
         raise RecordingError("Cannot infer the size of an empty TRC session; provide expected_sweeps")
     report = dict(enabled=True, count_source=source, zero_filled_sweeps=sum(
         d['zero_filled_sweeps'] for d in details), partitions=details,
-        note='Zero is a placeholder, not measured 0 dBm. Missing headers have ticks=0 and blank times.')
+        power_fill_dbm=MISSING_POWER_DBM, auxiliary_fill_value=0,
+        note='Missing power uses -300 dBm placeholders. Missing headers have ticks=0 and blank times. zero_filled is the legacy recovery flag name.')
     if details:
-        warnings.warn(f"Recovering {report['zero_filled_sweeps']} incomplete/missing sweeps with zeros; "
+        warnings.warn(f"Recovering {report['zero_filled_sweeps']} incomplete/missing sweeps with -300 dBm power; "
                       "see metadata.recovery and zero_filled flags", RuntimeWarning, stacklevel=3)
     return partitions, report
 
 
 def read_sweep(rec, partition, index, stream):
-    """Retain complete float32 values from a partial payload; zero the rest."""
+    """Retain complete float32 values; fill missing power with -300 dBm."""
     rec._check_cancel()
     first_ids = rec.state_first_ids
     state = rec.states[bisect_right(first_ids, index)-1]
@@ -117,7 +120,7 @@ def read_sweep(rec, partition, index, stream):
     header_bytes = stride-4*state.value_count
     if len(raw) < header_bytes:
         return Sweep(index, state, 0, 0,
-                     np.zeros((state.trace_count, state.points), dtype=np.float32),
+                     np.full((state.trace_count, state.points), MISSING_POWER_DBM, dtype=np.float32),
                      np.zeros(state.auxiliary_count, dtype=np.float32),
                      dict(zero_filled=True, timestamp_valid=False, recorded_value_count=0,
                           missing_header=True, available_bytes=len(raw)), str(partition.path), offset)
@@ -126,7 +129,10 @@ def read_sweep(rec, partition, index, stream):
         raise RecordingError(f"{partition.path}:{offset}: inconsistent state/trace link")
     recorded = (len(raw)-header_bytes)//4
     keep = header_bytes+4*recorded  # Do not reinterpret a torn float's remaining bytes.
-    sweep = parse_trace(raw[:keep] + bytes(stride-keep), state)
+    missing_power = max(0, state.points*state.trace_count-recorded)
+    padding = np.full(missing_power, MISSING_POWER_DBM, dtype='<f4').tobytes()
+    padding += bytes(4*(state.value_count-recorded-missing_power))
+    sweep = parse_trace(raw[:keep] + padding, state)
     if sweep.trace_id != index:
         raise RecordingError(f"{partition.path}:{offset}: expected trace {index}, got {sweep.trace_id}")
     header = dict(sweep.header)

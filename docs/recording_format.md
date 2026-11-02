@@ -192,9 +192,10 @@ bytes by this implementation. Unknown chunks and fields are also retained.
 
 Present indexes are checked for CRC. Strict Python decoding requires total-count
 agreement with physical records. Explicit recovery mode uses declared counts to
-zero-fill missing TRC tails, retaining available complete float32 values and
+fill missing TRC power with −300 dBm, retaining available complete float32 values and
 reporting the replacements separately; this is a recovery policy, not evidence
-that placeholder zero is an instrument measurement. The reader can scan recognized stores without an index, as can the
+that a placeholder is an instrument measurement. Missing auxiliary values remain
+0. The reader can scan recognized stores without an index, as can the
 vendor fallback (`apf.n`). Missing final physical records cannot always be
 detected when there is no declared count or checksum. No trace checksum or
 compression is present in the recovered als/alt path.

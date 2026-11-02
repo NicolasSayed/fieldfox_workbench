@@ -7,7 +7,7 @@ function data = read_fieldfox(sessionFolder, varargin)
 % Use 'MaxSweeps',Inf for every requested row (20 million cell limit).
 % SourceTimeZone defaults to EST (fixed UTC-05:00), per the user's clock.
 % Supported layouts match Python versions 1..18; RTSA needs one block and
-% nonzero span. Recovery (default) checks RPX CRCs/TRC counts and zero-fills
+% nonzero span. Recovery (default) checks RPX CRCs/TRC counts and fills
 % short TRC tails. Missing-header times stay blank, never estimated.
 
 p = inputParser; p.PartialMatching = false;
@@ -49,7 +49,7 @@ firstIds = [states.first_trace];
 assert(firstIds(1)==0 && all(diff(firstIds)>0),'fieldfox:state','Invalid state transition boundaries.');
 [counts,~,recovery] = fieldfox_trace_layout(sessionFolder,trc,stride,s0.version,o.RecoverIncomplete,o.ExpectedSweeps);
 if o.WarnRecovery && recovery.zero_filled_sweeps>0
-    warning('fieldfox:recovered','Zero-filling %d incomplete/missing sweeps; see zero_filled flags.',recovery.zero_filled_sweeps);
+    warning('fieldfox:recovered','Filling missing power in %d sweeps with -300 dBm; see zero_filled flags.',recovery.zero_filled_sweeps);
 end
 total = sum(counts); stop = min(o.StopSweep,total);
 validateattributes(o.StartSweep,{'numeric'},{'scalar','integer','nonnegative','finite'});
@@ -133,6 +133,10 @@ for k = 1:numel(trc)
             assert(isfinite(parameter) && parameter>=-2,'fieldfox:header','Invalid trace header parameter.');
         end
         values = value(b,headerBytes,'single',s.points*s.blocks+s.auxiliary);
+        firstMissing = double(recordedCounts(row))+1;
+        if firstMissing<=s.points*s.blocks
+            values(firstMissing:s.points*s.blocks) = single(-300);
+        end
         slot = values(o.TraceSlot*s.points+(1:s.points));
         power(row,:) = reshape(slot(mask),1,[]);
         auxiliary(row,:) = reshape(values(s.points*s.blocks+1:end),1,[]);
@@ -151,6 +155,7 @@ data.frequency_hz = []; data.time_axis_s = [];
 data.(axisKind) = referenceAxis(mask)';
 data.auxiliary_values = auxiliary; data.trace_masks = masks; data.state_ids = stateIds;
 data.zero_filled = zeroFilled; data.recorded_value_counts = recordedCounts;
+data.recovery_fill_dbm = -300; % zero_filled retains its legacy flag name.
 data.source_session = sessionFolder; data.states = states;
 names = {'GPSA','RTSA'};
 data.metadata_json = jsonencode(struct('application_name',names{s0.application}, ...

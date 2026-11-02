@@ -131,10 +131,10 @@ zero-span axes, multi-part processing and native MATLAB validation limits.
 
 ### Incomplete TRC files (for example, 500 expected / 497 present)
 
-Workbench's **Zero-fill incomplete TRC tails** option is enabled by default,
+Workbench's **Fill incomplete TRC tails (−300 dBm)** option is enabled by default,
 as is `RecoverIncomplete` in the MATLAB scripts. The reader keeps complete
 sweeps and complete samples from a partial sweep, fills the missing values
-with zeros, and preserves later sweep positions. RPX counts (including per-file
+with **−300 dBm** power placeholders, and preserves later sweep positions. RPX counts (including per-file
 deviations) or the next partition's first sweep ID determine missing tail lengths.
 Nothing is changed in the original recording.
 
@@ -147,11 +147,12 @@ export_fieldfox_session(sessionFolder, outputFolder, ...
     'RecoverIncomplete', true, 'ExpectedSweeps', 500);
 ```
 
-MAT files include `zero_filled`, `recorded_value_counts` and `timestamp_valid`.
+MAT files include `zero_filled` (the legacy recovery flag name),
+`recorded_value_counts`, `timestamp_valid` and `recovery_fill_dbm` (−300).
 Missing headers have ticks `0`, blank UTC/EST strings and `NaN` elapsed time.
 No missing timestamps are guessed. Spectrograms use original sweep indices if
-selected timestamps are missing. **Zero means missing data here, not measured
-0 dBm**; these placeholders participate in plots, means and holds. Use the flags
+selected timestamps are missing. **−300 means missing power here, not measured
+−300 dBm**; these placeholders participate in plots, means and holds. Use the flags
 to exclude them in analysis. Unsupported formats, corrupt full records and bad
 index CRCs still fail clearly. CLI/API remain strict by default; opt into recovery:
 
@@ -293,7 +294,7 @@ remain when the app exits. Preferences/recent paths are saved only in
 Supported recordings are GPSA versions 1–18 and single-block, nonzero-span RTSA
 versions 8–18. The folder name does not determine the format. RTSA density/multiblock
 captures, IQ/VITA-49, unknown versions and missing partition files fail explicitly.
-Short existing TRC tails can be zero-filled in recovery mode. Generic
+Short existing TRC tails can be filled with −300 dBm power in recovery mode. Generic
 CSV import is not a proprietary state-file decoder. See
 [binary format](docs/recording_format.md) and [protocol / provenance](docs/protocol.md).
 

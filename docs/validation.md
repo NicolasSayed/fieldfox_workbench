@@ -1,4 +1,4 @@
-# Release 0.1.6 validation
+# Release 0.1.7 validation
 
 Validated on Windows x64 with Python 3.11.9 and the isolated packages pinned in
 `requirements-build.txt`: NumPy 2.4.6, SciPy 1.17.1, Matplotlib 3.11.2, Pillow 12.3.0,
@@ -34,8 +34,8 @@ These checks used synthetic data, not supplied real recordings. Reproduction:
 
 Both recovery implementations validate present RPX CRCs and TRC counts; strict
 native MATLAB mode scans physical records without validating indexes. Python
-validates indexes in both modes. Recovery retains complete samples, zero-fills
-missing tails and records the replacements in metadata/arrays. Missing times
+validates indexes in both modes. Recovery retains complete samples, fills missing
+tail power with −300 dBm and records the replacements in metadata/arrays. Missing times
 remain blank, ticks are 0 and elapsed seconds are NaN. The GUI test loads a torn
 header, plots by sweep index, plays the placeholder with an explicit label and
 exports the recovered data to MAT. Original files remain unchanged. CLI/API

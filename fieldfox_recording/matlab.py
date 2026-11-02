@@ -32,6 +32,7 @@ def save_section_mat(rec: FieldFoxRecording, section: SpectrogramSection,
         raise RecordingError("MAT export requires SciPy: python -m pip install '.[mat]'") from error
     times = convert_timestamps(section.timestamp_ticks, source_timezone, dst_fold, allow_missing=rec.recovery['enabled'])
     payload = {"frequency_hz": section.frequency_hz, "elapsed_s": section.elapsed_s,
+               "recovery_fill_dbm": -300.0,
                "power_dbm": section.power_dbm, "sweep_indices": section.sweep_indices,
                "timestamp_ticks": section.timestamp_ticks,
                "trace_slot": section.trace_slot, "effective_step": section.effective_step,
@@ -107,6 +108,7 @@ def save_session_mat(rec: FieldFoxRecording, path: str | Path, *,
             axis_name = "time_axis_s" if current_state.span_hz == 0 else "frequency_hz"
             axis = getattr(current_state, axis_name)
             payload = {"power_dbm_traces": power[:count],
+                       "recovery_fill_dbm": -300.0,
                        "auxiliary_values": auxiliary[:count],
                        "timestamp_ticks": ticks[:count], "sweep_indices": indices[:count],
                        "trace_masks": masks[:count],

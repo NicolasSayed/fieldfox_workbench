@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     export.add_argument("--source-timezone", default="EST", help="MAT: instrument clock zone (default fixed EST)")
     export.add_argument("--dst-fold", type=int, choices=[0, 1], help="MAT: ambiguous DST hour, earlier/later")
     for command in (inspect, export):
-        command.add_argument("--recover-incomplete", action="store_true", help="Zero-fill short TRC tails")
+        command.add_argument("--recover-incomplete", action="store_true", help="Fill missing TRC power with -300 dBm")
         command.add_argument("--expected-sweeps", type=int, help="Recovery: explicit final count when no RPX declares it")
     plot = sub.add_parser("plot", help="View a selected recording section as a Matplotlib waterfall")
     from .spectrogram import add_arguments, run
